@@ -10,7 +10,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="tailwind.css">
-<link rel="stylesheet" href="themes.css">
 <style>.spoiler{background:#1e1f22;color:transparent;border-radius:4px;padding:0 3px;cursor:pointer;user-select:none}.spoiler.shown{background:#3f4147;color:inherit;user-select:auto;cursor:text}.bq{display:block;border-left:4px solid #4e5058;padding-left:10px;margin:2px 0}
 .hl{background:rgba(250,166,26,.22)!important;transition:background 1s}
 .tk-c{color:#7d8590;font-style:italic}.tk-s{color:#a5d6a7}.tk-n{color:#f2a65a}.tk-k{color:#c792ea}.tk-f{color:#82aaff}
@@ -54,20 +53,21 @@ html[data-mode=light] .tk-c{color:#6a737d}html[data-mode=light] .tk-s{color:#1a7
 <body class="bg-[#313338] text-[#dbdee1] h-screen overflow-hidden">
 
 <div id="auth" class="fixed inset-0 flex items-center justify-center p-4 z-50">
- <!-- faint hardware line-art background -->
- <svg class="art" style="top:-30px;left:-30px;width:240px;transform:rotate(-12deg)" viewBox="0 0 240 240"><rect x="70" y="60" width="80" height="80" rx="5"/><rect x="86" y="76" width="48" height="48" rx="3"/><circle cx="96" cy="86" r="3"/><path d="M82 60V40M98 60V30M114 60V40M130 60V30M146 60V40M82 140v20M98 140v30M114 140v20M130 140v30M146 140v20M70 80H40M70 100H30M70 120H40M150 80h30M150 100h40M150 120h30M98 30h-30l-14-14M130 30h30l14-14M98 170H60l-14 14"/><circle cx="54" cy="16" r="4"/><circle cx="174" cy="16" r="4"/><circle cx="46" cy="184" r="4"/><circle cx="30" cy="100" r="4"/><circle cx="190" cy="100" r="4"/><rect x="170" y="150" width="34" height="20" rx="3"/><rect x="20" y="150" width="22" height="34" rx="3"/></svg>
- <svg class="art" style="top:30px;right:-40px;width:300px;transform:rotate(10deg)" viewBox="0 0 260 180"><path d="M60 50C35 50 20 70 14 110c-4 26 10 38 28 30l26-16c8-5 14-6 24-6h76c10 0 16 1 24 6l26 16c18 8 32-4 28-30-6-40-21-60-46-60-14 0-20 6-34 6H94c-14 0-20-6-34-6Z"/><path d="M72 76v28M58 90h28"/><circle cx="186" cy="78" r="7"/><circle cx="206" cy="92" r="7"/><circle cx="166" cy="92" r="7"/><circle cx="186" cy="106" r="7"/><circle cx="116" cy="92" r="5"/><circle cx="144" cy="92" r="5"/></svg>
- <svg class="art" style="bottom:-20px;right:-30px;width:280px;transform:rotate(-8deg)" viewBox="0 0 260 240"><rect x="30" y="20" width="200" height="200" rx="10"/><rect x="60" y="50" width="56" height="56" rx="4"/><rect x="72" y="62" width="32" height="32" rx="2"/><rect x="150" y="48" width="50" height="24" rx="3"/><rect x="150" y="150" width="60" height="40" rx="3"/><path d="M116 78h20l14-14M88 106v34h40l12 12v0M200 60h20M60 170h40v30M100 170h30M210 110v30"/><circle cx="52" cy="40" r="5"/><circle cx="208" cy="40" r="5"/><circle cx="52" cy="200" r="5"/><circle cx="208" cy="200" r="5"/><circle cx="140" cy="152" r="3"/><circle cx="210" cy="110" r="3"/><path d="M60 140h-20M60 128H40"/></svg>
- <svg class="art" style="bottom:20px;left:-50px;width:280px;transform:rotate(12deg)" viewBox="0 0 260 150"><rect x="20" y="20" width="220" height="110" rx="46"/><path d="M62 52v46M44 75h36"/><circle cx="188" cy="62" r="11"/><circle cx="214" cy="84" r="11"/><path d="M104 96h20M132 96h20"/></svg>
-
- <div class="card">
-  <h1 class="logo">BEANCORD</h1>
-  <input id="u" class="field" placeholder="Username (e.g., PixelBean42)" autocomplete="off">
-  <input id="p" class="field" type="password" placeholder="Password (min. 8 chars, 1 num)" autocomplete="new-password">
-  <div id="err"></div>
-  <button class="btn btn-in" onclick="doAuth('in')">Log In</button>
-  <button class="btn btn-up" onclick="doAuth('up')">Create Account</button>
- </div>
+ <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+ <form class="card" id="authform" autocomplete="on" onsubmit="event.preventDefault();authSubmit()">
+  <div class="mark"><span>B</span></div>
+  <h1 class="logo" id="auth_h">Welcome back!</h1>
+  <p class="sub" id="auth_s">We're so excited to see you again!</p>
+  <label class="lbl" for="u">Username</label>
+  <input id="u" class="field" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next">
+  <label class="lbl" for="p">Password</label>
+  <div class="pw"><input id="p" class="field" name="password" type="password" autocomplete="current-password" enterkeyhint="go"><button type="button" class="eye" id="auth_eye" tabindex="-1" aria-label="Show password" onclick="authEye()">Show</button></div>
+  <div class="hint" id="auth_hint">At least 8 characters with 1 number.</div>
+  <div id="err" role="alert"></div>
+  <button type="submit" class="btn btn-in" id="auth_go">Log In</button>
+  <div class="alt"><span id="auth_alt">Need an account?</span> <button type="button" class="btn-up" id="auth_swap" onclick="authMode(authIsUp?'in':'up')">Register</button></div>
+ </form>
+</div>
 </div>
 
 <div id="app" class="hidden h-full flex relative">
@@ -136,6 +136,7 @@ html[data-mode=light] .tk-c{color:#6a737d}html[data-mode=light] .tk-s{color:#1a7
   <button id="bfwd" onclick="bNav(1)" title="Forward" class="w-9 h-9 rounded-lg text-[#b5bac1] hover:bg-[#35373c] hover:text-white disabled:opacity-30">→</button>
   <button onclick="bReload()" title="Reload" class="w-9 h-9 rounded-lg text-[#b5bac1] hover:bg-[#35373c] hover:text-white">⟳</button>
   <form id="bform" class="flex-1 min-w-0"><input id="burl" autocomplete="off" spellcheck="false" placeholder="Search or enter address" class="w-full rounded-[10px] border-2 border-[#4a4d55] bg-[#383a40] px-3 py-2 text-sm text-white outline-none focus:border-[#6b78e8]"></form>
+  <select id="btrans" title="Connection type used by the browser" onchange="setTransport(this.value)" class="h-9 text-sm"><option value="">Default</option><option value="libcurl">libcurl</option><option value="epoxy">Epoxy</option></select>
   <button onclick="bExternal()" title="Open in a real browser tab" class="w-9 h-9 rounded-lg text-[#b5bac1] hover:bg-[#35373c] hover:text-white">↗</button>
   <button onclick="closeWeb()" title="Back to chat" class="w-9 h-9 rounded-lg text-[#b5bac1] hover:bg-[#35373c] hover:text-white">✕</button>
  </div>
@@ -186,7 +187,6 @@ html[data-mode=light] .tk-c{color:#6a737d}html[data-mode=light] .tk-s{color:#1a7
   <label class="block text-[11px] font-bold uppercase tracking-wide text-[#949ba4]">Nickname<input id="pn" maxlength="24" placeholder="Shown instead of your username" class="block mt-1.5 w-full bg-[#1e1f22] rounded-lg px-3 py-2 text-white text-sm font-normal normal-case outline-none focus:ring-2 focus:ring-[#5865f2]/60"></label>
   <label class="block text-[11px] font-bold uppercase tracking-wide text-[#949ba4]">About me<textarea id="pb" maxlength="200" rows="3" placeholder="Tell people about yourself" class="block mt-1.5 w-full bg-[#1e1f22] rounded-lg px-3 py-2 text-white text-sm font-normal normal-case outline-none focus:ring-2 focus:ring-[#5865f2]/60"></textarea></label>
   <div class="flex gap-6 text-[11px] font-bold uppercase tracking-wide text-[#949ba4]"><label class="flex items-center gap-2">Name color<input id="pc" type="color"></label><label class="flex items-center gap-2">Banner color<input id="pbn" type="color"></label></div>
-  <label class="block text-[11px] font-bold uppercase tracking-wide text-[#949ba4]">Background style<select id="pt" class="block mt-1.5 w-full bg-[#1e1f22] rounded-lg px-3 py-2 text-white text-sm font-normal normal-case outline-none"><option value="default">Default dark</option><option value="maroon">Maroon</option><option value="midnight">Midnight blue</option><option value="forest">Forest</option><option value="plum">Plum</option><option value="purple">Purple</option><option value="midnightblack">Midnight black</option><option value="bubblegum">Bubblegum Pink</option><option value="hotpink">Hot Pink Night</option><option value="blossom">Cherry Blossom</option><option value="coral">Coral</option><option value="peach">Peach</option><option value="rosegold">Rose Gold</option><option value="sunset">Sunset</option><option value="amber">Amber</option><option value="gold">Gold</option><option value="lime">Lime</option><option value="matrix">Matrix Green</option><option value="mint">Mint</option><option value="seafoam">Seafoam</option><option value="teal">Teal</option><option value="ice">Ice</option><option value="sky">Sky</option><option value="ocean">Ocean</option><option value="abyss">Abyss</option><option value="royal">Royal Blue</option><option value="lavender">Lavender</option><option value="neon">Neon</option><option value="grape">Grape</option><option value="berry">Berry</option><option value="crimson">Crimson</option><option value="bloodmoon">Blood Moon</option><option value="mocha">Mocha</option><option value="slate">Slate</option><option value="graphite">Graphite</option></select></label>
   <div><div class="text-[11px] font-bold uppercase tracking-wide text-[#949ba4] mb-1">Blocked users</div><div id="pblk" class="space-y-1"></div></div>
   <div class="flex gap-2 pt-1"><button onclick="saveProfile()" class="flex-1 bg-[#5865f2] hover:bg-[#4752c4] text-white py-2 rounded-lg text-sm font-semibold">Save</button><button onclick="$('pm').classList.add('hidden')" class="flex-1 bg-[#4e5058] hover:bg-[#5d6068] text-white py-2 rounded-lg text-sm">Cancel</button></div>
   <div class="rounded-xl bg-black/20 p-3 space-y-2">
@@ -213,4 +213,5 @@ html[data-mode=light] .tk-c{color:#6a737d}html[data-mode=light] .tk-s{color:#1a7
 <script src="settings.js"></script>
 <script src="servertools.js"></script>
 <script src="receipts.js"></script>
+<script src="qol.js"></script>
 </body></html>

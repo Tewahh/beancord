@@ -480,7 +480,7 @@ function pickAvatar(f){return new Promise((res,rej)=>{const r=new FileReader();r
     $('pavwrap').innerHTML=av({...me,avatar:newAvatar||me.avatar},20);
     $('pprev').innerHTML=`<div class="font-bold text-xl" style="color:${$('pc').value}">${esc($('pn').value.trim()||me.username)}</div><div class="text-sm text-[#949ba4]">${esc(me.username)}</div>`;
   }
-  function openProfile(){newAvatar=null;newAvatarBlob=null;newBannerBlob=null;bannerCleared=false;$('pc').value=col(me);$('pn').value=me.nickname||'';$('pn').disabled=!canNickname();$('pn').placeholder=canNickname()?'Shown instead of your username':'Only the owner and co-owners can change nicknames';$('pb').value=me.bio||'';$('pbn').value=/^#[0-9a-fA-F]{6}$/.test(me.banner||'')?me.banner:'#5865f2';$('pt').value=theme;drawBlocked();$('pf').value='';prev();accInit();$('pm').classList.remove('hidden')}
+  function openProfile(){newAvatar=null;newAvatarBlob=null;newBannerBlob=null;bannerCleared=false;$('pc').value=col(me);$('pn').value=me.nickname||'';$('pn').disabled=!canNickname();$('pn').placeholder=canNickname()?'Shown instead of your username':'Only the owner and co-owners can change nicknames';$('pb').value=me.bio||'';$('pbn').value=/^#[0-9a-fA-F]{6}$/.test(me.banner||'')?me.banner:'#5865f2';drawBlocked();$('pf').value='';prev();accInit();$('pm').classList.remove('hidden')}
   $('pf').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{newAvatarBlob=await pickAvatar(f);if(newAvatar)URL.revokeObjectURL(newAvatar);newAvatar=URL.createObjectURL(newAvatarBlob);prev()}catch(_){alert('Could not read that image.')}e.target.value=''};
   $('pbi').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const b=await shrinkBanner(f);if(newBannerUrl)URL.revokeObjectURL(newBannerUrl);newBannerBlob=b;newBannerUrl=URL.createObjectURL(b);bannerCleared=false;prev()}catch(_){alert('Could not read that image.')}e.target.value=''};
   function clearBannerImg(){newBannerBlob=null;bannerCleared=true;prev()}
@@ -686,7 +686,7 @@ $('i').addEventListener('keydown',e=>{
 let replyTo=null,rx={},blocked=new Set(),msgCache={};
 const QUICK=['👍','❤️','😂','🔥'],EMOJIS=['👍','❤️','😂','🔥','😮','😢','🎉','👀','🙏','💯','😡','🤔','✅','❌','👏','😎'];
 async function loadBlocks(){const {data}=await sb.from('blocks').select('*');blocked=new Set((data||[]).map(b=>b.blocked))}
-function replyLine(m){if(!m.reply_to)return '';const r=msgCache[m.reply_to],p=r&&profiles[r.sender_id];return `<div class="text-[11px] text-[#949ba4] truncate">↪ ${r?esc(dn(p))+': '+esc(plainText(r.content).slice(0,60)):'original message'}</div>`}
+function replyLine(m){if(!m.reply_to)return '';const r=msgCache[m.reply_to],p=r&&profiles[r.sender_id];return `<div onclick="event.stopPropagation();jumpReply('${m.reply_to}')" class="reply-ref text-[11px] text-[#949ba4] truncate cursor-pointer hover:text-[#dbdee1]" title="Jump to the original message">↪ ${r?'<b class="font-semibold">'+esc(dn(p))+'</b> '+esc(plainText(r.content).slice(0,60)):'<i>original message</i>'}</div>`}
 function drawRx(id){const e=$('rx_'+id);if(!e)return;const g={};(rx[id]||[]).forEach(x=>{(g[x.emoji]=g[x.emoji]||[]).push(x.user_id)});
   e.innerHTML=Object.entries(g).map(([em,u])=>`<button onclick="toggleRx('${id}','${em}')" class="px-2 py-0.5 rounded-full text-xs border ${u.includes(me.id)?'bg-[#5865f2]/30 border-[#5865f2]':'bg-[#2b2d31] border-[#3f4147]'}">${em} ${u.length}</button>`).join('')}
 async function toggleRx(id,emoji){
@@ -887,10 +887,7 @@ $('i').addEventListener('paste',e=>{
     }
   }
 });
-let shopTags={},owned=new Set(),theme='default';
-try{theme=localStorage.getItem('theme')||'default'}catch(e){}
-function applyTheme(n){const r=document.documentElement;if(n&&n!=='default')r.dataset.theme=n;else delete r.dataset.theme;try{localStorage.setItem('theme',n||'default')}catch(e){}}
-applyTheme(theme);$('pt').onchange=e=>{theme=e.target.value;applyTheme(theme)};
+let shopTags={},owned=new Set();try{localStorage.removeItem('theme')}catch(e){}
 const chip=t=>`<span class="text-[9px] font-black uppercase px-1.5 rounded" style="background:${esc(t.color)};color:${esc(t.text_color)}">${esc(t.label)}</span>`;
 const MAX_TAGS=2;
 const canNickname=()=>rank(defRole)>=6; // owner and co-owner only
@@ -1906,6 +1903,10 @@ const bSrc=e=>e.url?PROXY_URL+'/p?u='+encodeURIComponent(e.url):PROXY_URL+'/go?q
 const bDisp=e=>e?(e.q||e.url||''):'';
 function bTitle(t){const e=bEntry(t);return !e?'New tab':(t.title||(e.q?e.q:hostOf(e.url)))}
 
+// connection type for the proxy site: '' (its own default), 'libcurl' or 'epoxy'. The proxy site reads ?transport= (see setup/proxy-transports.md)
+let BTRANS='';try{BTRANS=localStorage.getItem('bc_transport')||''}catch(e){}
+const withTransport=u=>{if(!BTRANS)return u;try{const x=new URL(u);x.searchParams.set('transport',BTRANS);return x.toString()}catch(e){return u}};
+function setTransport(v){BTRANS=v;try{localStorage.setItem('bc_transport',v)}catch(e){}const f=$('scramFrame');if(f){f.remove();scramjetFrame()}}
 function scramjetFrame(src){
   ['btabs','qlinks','bform','bback','bfwd'].forEach(id=>{const e=$(id);if(e)e.classList.add('hidden')});
   document.querySelectorAll('#web button[onclick="bReload()"]').forEach(b=>b.classList.add('hidden'));
@@ -1915,11 +1916,11 @@ function scramjetFrame(src){
     f=document.createElement('iframe');f.id='scramFrame';f.className='absolute inset-0 w-full h-full border-0';
     f.style.background='#121212';f.allow='fullscreen; autoplay; clipboard-write';
     $('bcont').appendChild(f);
-    f.src=src||SCRAMJET_URL;
-  }else if(src)f.src=src;
+    f.src=withTransport(src||SCRAMJET_URL);
+  }else if(src)f.src=withTransport(src);
 }
 function openWeb(){
-  $('web').classList.remove('hidden');
+  $('web').classList.remove('hidden');$('btrans').value=BTRANS;$('btrans').classList.toggle('hidden',!SCRAMJET_URL);
   if(SCRAMJET_URL){scramjetFrame();return}
   renderQuick();
   if(!PROXY_URL){
@@ -2286,4 +2287,24 @@ function musicStop(){
   $('music_msg').textContent='Stopped.';
   try{localStorage.removeItem(MUSIC_KEY)}catch(e){}
   const d=$('music_dot');if(d)d.style.display='none';
+}
+
+// login: Enter / "Go" on the keyboard. In the username box it jumps to the password, in the password box it logs in.
+$('u').addEventListener('keydown',e=>{if(e.key==='Enter'&&!$('p').value){e.preventDefault();$('p').focus()}});
+
+// phones: press and hold a message to open its menu (iOS never fires "contextmenu" on a long press)
+{
+  let t=null,sx=0,sy=0,fired=false;
+  const stop=()=>{clearTimeout(t);t=null};
+  const msgs=$('msgs');
+  msgs.addEventListener('touchstart',e=>{
+    fired=false;stop();if(e.touches.length!==1)return;
+    const row=e.target.closest('[id^="m_"]');if(!row||e.target.closest('a,button,input,textarea,select,video,audio'))return;
+    const tc=e.touches[0];sx=tc.clientX;sy=tc.clientY;
+    t=setTimeout(()=>{t=null;fired=true;if(navigator.vibrate)try{navigator.vibrate(15)}catch(_){}msgMenu(row.id.slice(2),sx,sy)},420);
+  },{passive:true});
+  msgs.addEventListener('touchmove',e=>{if(!t)return;const tc=e.touches[0];if(Math.abs(tc.clientX-sx)>10||Math.abs(tc.clientY-sy)>10)stop()},{passive:true});
+  msgs.addEventListener('touchend',e=>{stop();if(fired){e.preventDefault();setTimeout(()=>{fired=false},400)}},{passive:false});
+  msgs.addEventListener('touchcancel',stop,{passive:true});
+  msgs.addEventListener('contextmenu',e=>{if(fired)e.preventDefault()},true);
 }
