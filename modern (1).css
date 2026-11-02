@@ -1,0 +1,76 @@
+/* BEANCORD "Modernize (beta)". Only loaded when switched on in Settings > Appearance. */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+html[data-ui=modern]{--m-bg:#0F0D0C;--m-panel:#181514;--m-raise:#211D1B;--m-hi:#2A2320;--m-line:rgba(255,240,230,.07);--m-acc:#C2412E}
+html[data-ui=modern][data-mode=light]{--m-bg:#E9E2DA;--m-panel:#FFFFFF;--m-raise:#F4EEE8;--m-hi:#EAE2DA;--m-line:rgba(40,20,10,.09)}
+html[data-ui=modern] body{background:var(--m-bg)!important;font-family:'Plus Jakarta Sans',Inter,system-ui,sans-serif}
+html[data-ui=modern] #app{padding:12px;gap:12px;box-sizing:border-box;background:var(--m-bg)!important}
+html[data-ui=modern] #leftcol{gap:12px}
+/* rail, channel column, chat, members = four rounded panels */
+html[data-ui=modern] #leftcol>div:nth-child(1),
+html[data-ui=modern] #leftcol>div:nth-child(2),
+html[data-ui=modern] #app>.flex-1.flex-col,
+html[data-ui=modern] #mem{background:var(--m-panel)!important;border-radius:20px;overflow:hidden}
+html[data-ui=modern] #leftcol>div:nth-child(1){width:68px}
+html[data-ui=modern] #leftcol>div:nth-child(1) button{border-radius:16px}
+html[data-ui=modern] #leftcol>div:nth-child(1) button:hover{border-radius:14px}
+html[data-ui=modern] #sh,html[data-ui=modern] #ch{height:60px;border-bottom:1px solid var(--m-line)!important}
+html[data-ui=modern] #ch{padding:0 14px 0 20px}
+html[data-ui=modern] #ch button{min-width:36px;min-height:36px;border-radius:10px}
+html[data-ui=modern] #ch button:hover{background:var(--m-raise)}
+html[data-ui=modern] #sc>*{border-radius:12px;min-height:40px}
+html[data-ui=modern] #leftcol>div:nth-child(2)>div:last-child{background:var(--m-raise)!important;margin:0 10px 10px;border-radius:16px}
+/* messages */
+html[data-ui=modern] #msgs{padding:20px 24px}
+html[data-ui=modern] #msgs>div{border-radius:14px}
+html[data-ui=modern] #msgs>div:hover{background:rgba(255,240,230,.035)}
+html[data-ui=modern][data-mode=light] #msgs>div:hover{background:rgba(40,20,10,.04)}
+/* composer */
+html[data-ui=modern] #f{margin:4px 20px 18px;padding:8px;gap:6px;border-radius:18px;background:var(--m-raise);border:1px solid var(--m-line)}
+html[data-ui=modern] #f button{background:transparent!important;border-radius:12px}
+html[data-ui=modern] #f button:hover{background:var(--m-hi)!important}
+html[data-ui=modern] #f input,html[data-ui=modern] #f textarea{background:transparent!important;border:0!important;outline:0}
+html[data-ui=modern] #f button[type=submit]{background:var(--m-acc)!important;color:#fff;padding:0 18px;font-weight:700}
+html[data-ui=modern] #typing{margin-top:-4px!important}
+/* accent: swap Discord blurple for the bean red */
+html[data-ui=modern] .bg-\[\#5865f2\]{background:var(--m-acc)!important}
+html[data-ui=modern] .hover\:bg-\[\#4752c4\]:hover{background:#A5362A!important}
+html[data-ui=modern] #leftcol>div:nth-child(1) .bg-\[\#313338\]{background:var(--m-raise)!important}
+/* popups and cards */
+html[data-ui=modern] .rounded-xl,html[data-ui=modern] .rounded-lg{border-radius:14px}
+html[data-ui=modern] ::-webkit-scrollbar{width:8px}
+html[data-ui=modern] ::-webkit-scrollbar-thumb{background:rgba(255,240,230,.14);border-radius:4px}
+/* phones: panels go edge to edge */
+@media (max-width:767px){
+ html[data-ui=modern] #app{padding:0;gap:0}
+ html[data-ui=modern] #leftcol>div:nth-child(1),html[data-ui=modern] #leftcol>div:nth-child(2),
+ html[data-ui=modern] #app>.flex-1.flex-col,html[data-ui=modern] #mem{border-radius:0}
+ html[data-ui=modern] #leftcol{gap:0}
+ html[data-ui=modern] #f{margin:4px 10px 12px}
+ html[data-ui=modern] #msgs{padding:14px 12px}
+}
+
+/* ---- cleaner DMs ---- */
+/* friend tabs become a segmented control */
+html[data-ui=modern] #sc>div.flex.gap-1.px-1{background:var(--m-raise);border-radius:12px;padding:4px;margin:4px 2px 6px}
+html[data-ui=modern] #sc>div.flex.gap-1.px-1>button{min-height:32px;font-size:12px;border-radius:9px}
+html[data-ui=modern] #sc>div.flex.gap-1.px-1>button.bg-\[\#404249\]{background:var(--m-hi)!important}
+/* section labels */
+html[data-ui=modern] #sc>div.uppercase{font-size:11px;letter-spacing:.1em;padding:16px 10px 6px}
+/* friend and group rows: roomy, rounded, remove button only on hover */
+html[data-ui=modern] #sc>button[data-friend-uid],
+html[data-ui=modern] #sc>button[onclick^="openGroup"]{min-height:48px;padding:6px 10px;border-radius:12px;font-weight:600}
+html[data-ui=modern] #sc>button[data-friend-uid]:hover,
+html[data-ui=modern] #sc>button[onclick^="openGroup"]:hover{background:var(--m-raise)!important}
+html[data-ui=modern] #sc>button[data-friend-uid].bg-\[\#404249\],
+html[data-ui=modern] #sc>button[onclick^="openGroup"].bg-\[\#404249\]{background:var(--m-hi)!important}
+html[data-ui=modern] #sc>button[data-friend-uid] [title="Remove friend"]{opacity:0;transition:opacity .15s}
+html[data-ui=modern] #sc>button[data-friend-uid]:hover [title="Remove friend"],
+html[data-ui=modern] #sc>button[data-friend-uid]:focus-within [title="Remove friend"]{opacity:1}
+/* unread badge */
+html[data-ui=modern] #sc .bg-\[\#f23f43\].rounded-full{background:var(--m-acc)!important;min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px}
+/* add-friend box */
+html[data-ui=modern] #fadd{background:var(--m-raise)!important;border:1px solid var(--m-line);border-radius:12px;min-height:40px;padding:0 12px;font-size:13px}
+html[data-ui=modern] #fadd+button{border-radius:12px;min-height:40px;padding:0 14px;font-weight:700}
+/* empty chat area, e.g. before you pick a DM */
+html[data-ui=modern] #msgs:empty{display:flex;align-items:center;justify-content:center}
+html[data-ui=modern] #msgs:empty::before{content:"Pick a friend to start chatting";color:#9A8F86;font-size:15px;font-weight:600;padding:12px 18px;border:1px dashed var(--m-line);border-radius:14px}
