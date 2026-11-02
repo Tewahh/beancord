@@ -2,13 +2,17 @@
 // ===== font size, keyboard shortcuts, channel navigation keys, install prompt. Loaded after extras.js. =====
 
 // ---------- preferences (kept in this browser) ----------
-const PREF_DEF={mode:'dark',compact:false,font:16,sound:true,linkPrev:true,mic:'',spk:'',cam:'',ns:true,ec:true,agc:true,share:'sharp',rr:true};
+const PREF_DEF={mode:'dark',compact:false,font:16,sound:true,linkPrev:true,mic:'',spk:'',cam:'',ns:true,ec:true,agc:true,share:'sharp',rr:true,modern:false};
 let prefs_=Object.assign({},PREF_DEF,LS.get('bc_prefs',{}));
 function setPref(k,v){prefs_[k]=v;LS.set('bc_prefs',prefs_);applyPrefs()}
 function applyPrefs(){
   const r=document.documentElement;
   r.dataset.mode=prefs_.mode==='light'?'light':'dark';
   r.classList.toggle('compact',!!prefs_.compact);
+  // Modernize (beta): the stylesheet is only fetched when it is switched on
+  const ml=document.getElementById('modern-css');
+  if(prefs_.modern){r.dataset.ui='modern';if(!ml){const l=document.createElement('link');l.id='modern-css';l.rel='stylesheet';l.href='modern.css';document.head.appendChild(l)}}
+  else{delete r.dataset.ui;if(ml)ml.remove()}
   r.style.setProperty('--bc-chat',(+prefs_.font||16)+'px');
 }
 applyPrefs();
@@ -81,6 +85,7 @@ function stLook(el){
   el.innerHTML=stH('Appearance')+`<div class="bg-[#2b2d31] rounded-xl px-5 py-2 divide-y divide-[#3f4147]">
     ${stRow('Brightness','Dark is the default.',`<select id="st_mode" class="${stSel}"><option value="dark">Dark</option><option value="light">Light</option></select>`)}
     ${stRow('Message spacing','Compact packs more messages on screen.',`<select id="st_dens" class="${stSel}"><option value="0">Cozy</option><option value="1">Compact</option></select>`)}
+    ${stRow('New look','An experimental redesign: rounded panels, softer colours. Off by default, switch back any time.',`<button id="st_mod" type="button" aria-pressed="${prefs_.modern?'true':'false'}" class="px-4 py-2 rounded-lg text-sm font-bold text-white ${prefs_.modern?'bg-[#8e2b25]':'bg-[#4e5058]'}">${prefs_.modern?'✓ ':''}Modernize (beta)</button>`)}
     ${stRow('Read receipts','Show "Seen" under your DMs once they are read. Turn off and nobody sees when you read theirs, and you will not see theirs.',`<select id="st_rr" class="${stSel}"><option value="1">On</option><option value="0">Off</option></select>`)}
     ${stRow('Chat font size',`<span id="st_fsv">${prefs_.font}px</span>`,`<input id="st_font" type="range" min="12" max="20" step="1" value="${prefs_.font}" class="w-40">`)}
     ${stRow('Link previews','Show a small card under links. Turning this off also stops your browser asking the link-preview service.',stSwitch('linkPrev',prefs_.linkPrev))}
@@ -89,6 +94,7 @@ function stLook(el){
   $('st_mode').value=prefs_.mode;$('st_dens').value=prefs_.compact?'1':'0';$('st_rr').value=prefs_.rr===false?'0':'1';
   $('st_mode').onchange=e=>setPref('mode',e.target.value);
   $('st_dens').onchange=e=>setPref('compact',e.target.value==='1');
+  $('st_mod').onclick=()=>{setPref('modern',!prefs_.modern);stLook(el)};
   $('st_rr').onchange=e=>{setPref('rr',e.target.value==='1');if(typeof rrChanged==='function')rrChanged()};
   $('st_font').oninput=e=>{setPref('font',+e.target.value);$('st_fsv').textContent=e.target.value+'px'};
   wireSwitches(el,(k,v)=>{setPref(k,v);stLook(el)});
