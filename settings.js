@@ -11,7 +11,7 @@ function applyPrefs(){
   r.classList.toggle('compact',!!prefs_.compact);
   // Modernize (beta): the stylesheet is only fetched when it is switched on
   const ml=document.getElementById('modern-css');
-  if(prefs_.modern){r.dataset.ui='modern';if(!ml){const l=document.createElement('link');l.id='modern-css';l.rel='stylesheet';l.href='modern.css';document.head.appendChild(l)}}
+  if(prefs_.modern){r.dataset.ui='modern';if(!ml){const l=document.createElement('link');l.id='modern-css';l.rel='stylesheet';l.href='modern.css?v='+Date.now();document.head.appendChild(l)}}
   else{delete r.dataset.ui;if(ml)ml.remove()}
   r.style.setProperty('--bc-chat',(+prefs_.font||16)+'px');
 }
