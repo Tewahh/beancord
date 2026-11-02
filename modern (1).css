@@ -74,3 +74,4 @@ html[data-ui=modern] #fadd+button{border-radius:12px;min-height:40px;padding:0 1
 /* empty chat area, e.g. before you pick a DM */
 html[data-ui=modern] #msgs:empty{display:flex;align-items:center;justify-content:center}
 html[data-ui=modern] #msgs:empty::before{content:"Pick a friend to start chatting";color:#9A8F86;font-size:15px;font-weight:600;padding:12px 18px;border:1px dashed var(--m-line);border-radius:14px}
+html[data-ui=modern] #leftcol button[class*="5865f2"]{background:var(--m-acc)!important}
