@@ -693,7 +693,7 @@ async function toggleRx(id,emoji){
   const m=msgCache[id],dm=!!m&&!m.channel_id,kind=m&&m.group_id?'group':'dm',T=dm?'dm_reactions':'reactions';
   const mine=(rx[id]||[]).find(x=>x.user_id===me.id&&x.emoji===emoji);
   if(mine){let q=sb.from(T).delete().eq('message_id',id).eq('user_id',me.id).eq('emoji',emoji);if(dm)q=q.eq('kind',kind);const {error}=await q;if(error)return alert(error.message);rx[id]=rx[id].filter(x=>x!==mine)}
-  else{const row={message_id:id,emoji};if(dm)row.kind=kind;const {error}=await sb.from(T).insert(row);if(error)return alert(error.message.includes('row-level')?'You cannot react right now.':/relation|schema cache|does not exist/i.test(error.message)?'Run setup/dm_and_saved.sql in Supabase to enable reactions in DMs.':error.message);(rx[id]=rx[id]||[]).push({message_id:id,user_id:me.id,emoji})}
+  else{const row={message_id:id,emoji};if(dm)row.kind=kind;const {error}=await sb.from(T).insert(row);if(error)return alert(error.message.includes('row-level')||/banned/i.test(error.message)?'You cannot react right now.':/relation|schema cache|does not exist/i.test(error.message)?'Run setup/dm_and_saved.sql in Supabase to enable reactions in DMs.':error.message);(rx[id]=rx[id]||[]).push({message_id:id,user_id:me.id,emoji})}
   drawRx(id)}
 function hideCtx(){$('ctx').classList.add('hidden')}
 function showCtx(x,y,h){const c=$('ctx');c.innerHTML=h;c.classList.remove('hidden');c.style.left=Math.max(4,Math.min(x,innerWidth-c.offsetWidth-8))+'px';c.style.top=Math.max(4,Math.min(y,innerHeight-c.offsetHeight-8))+'px'}
@@ -780,13 +780,16 @@ function showProfile(uid){
   <div class="px-5 -mt-10 relative"><div class="relative inline-block rounded-full" style="border:5px solid #2a2c30">${av(p,20)}${dot}</div></div>
   <div class="px-5 pt-3 pb-5">
    <div class="flex items-center flex-wrap gap-x-2 gap-y-1"><span class="font-bold text-xl" style="color:${col(p)}">${esc(dn(p))}</span>${isBot(p)?BOTBADGE:''}${r?tag(p,r):''}${utag(p)}</div>
-   <div class="text-sm text-[#949ba4] mt-0.5">${esc(p.username)}</div>
+   <div class="text-sm text-[#949ba4] mt-0.5">@${esc(p.username)}</div>
+   <div id="vpstats" class="mt-1.5 text-xs text-[#949ba4] space-y-0.5"></div>
    ${p.bio?`<p class="mt-3 text-sm text-[#dbdee1] break-words whitespace-pre-wrap">${linkify(p.bio)}</p>`:''}
    ${friendHtml?`<div class="mt-4 flex flex-wrap gap-2">${friendHtml}</div>`:''}
    <div class="mt-4 rounded-xl bg-black/20 overflow-hidden divide-y divide-white/5">${rowsArr.join('')}</div>
    ${roleHtml}
   </div>`;
-  $('vp').classList.remove('hidden')}
+  $('vp').classList.remove('hidden');
+  sb.rpc('bc_profile_stats',{uid}).then(({data})=>{const x=Array.isArray(data)?data[0]:data,el=$('vpstats');
+    if(x&&el)el.innerHTML='<div>#️⃣ account #'+x.account_no+'</div><div>💬 '+Number(x.msgs).toLocaleString()+' messages</div>'})}
 async function blockUser(uid){if(!(await askConfirm('Block '+dn(profiles[uid])+'? You will stop seeing their messages. Undo with /unblock username')))return;const {error}=await sb.from('blocks').insert({blocked:uid});if(error)return alert(error.message);blocked.add(uid);if(cur.type==='ch')openChannel(cur.id);else if(cur.type==='dm')openDM(cur.id)}
 async function reportMsg(id){const r=(await askText('Why are you reporting this message? (optional)'));if(r===null)return;const {error}=await sb.from('reports').insert({message_id:id,reason:r.slice(0,300)});toast(error?error.message:'Report sent to the staff')}
 async function showReports(){const {data:r,error}=await sb.from('reports').select('*').order('created_at',{ascending:false}).limit(15);if(error)return sys(error.message);if(!r.length)return sys('No reports.');
