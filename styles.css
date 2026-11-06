@@ -418,3 +418,97 @@ html body #ctx{max-height:min(80vh,calc(100dvh - 16px));overflow-y:auto}
 #mact button:hover{background:#3f4147;color:#dbdee1}
 .reply-ref{margin-left:2px;line-height:16px}
 .reply-ref:hover{text-decoration:underline}
+
+/* ===== Server Settings (settingshub.js): Discord layout, sidebar + content ===== */
+#sx{position:fixed;inset:0;z-index:45;display:flex;background:#313338;color:#dbdee1;animation:sxin .16s ease-out}
+@keyframes sxin{from{opacity:0;transform:scale(1.02)}to{opacity:1;transform:none}}
+#sx .sx-nav{flex:1 0 218px;background:#2b2d31;display:flex;justify-content:flex-end;overflow-y:auto}
+#sx .sx-nav-in{width:218px;padding:60px 6px 24px 20px;box-sizing:border-box}
+#sx .sx-grp{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;color:#949ba4;padding:16px 10px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#sx .sx-grp:first-child{padding-top:0}
+#sx .sx-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 10px;margin-bottom:2px;border-radius:4px;color:#b5bac1;font-size:15px;font-weight:500}
+#sx .sx-item:hover{background:#35373c;color:#dbdee1}
+#sx .sx-item.on{background:#404249;color:#fff}
+#sx .sx-ic{width:20px;text-align:center;font-size:14px;opacity:.85}
+#sx .sx-main{flex:1 1 800px;position:relative;overflow-y:auto;padding:60px 40px 80px 40px;box-sizing:border-box}
+#sx .sx-wrap{max-width:740px}
+#sx .sx-head h2{font-size:20px;font-weight:700;color:#f2f3f5;margin:0 0 20px}
+#sx .sx-close{position:fixed;top:60px;right:40px;width:36px;display:flex;flex-direction:column;align-items:center;gap:4px;color:#b5bac1}
+#sx .sx-close span{width:36px;height:36px;border:2px solid #b5bac1;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px}
+#sx .sx-close small{font-size:11px;font-weight:700;letter-spacing:.04em}
+#sx .sx-close:hover span{background:rgba(255,255,255,.08);color:#fff;border-color:#fff}
+#sx .sx-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+#sx .sx-bar-r{display:flex;gap:8px;flex-shrink:0}
+#sx .sx-sub{font-size:13px;color:#949ba4;line-height:1.35}
+#sx .sx-note{font-size:13px;color:#b5bac1;background:#2b2d31;border-radius:6px;padding:12px 14px;margin:12px 0;line-height:1.4}
+#sx .sx-sec{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;color:#b5bac1;margin:24px 0 8px}
+#sx .sx-card,#sx .sx-row{display:flex;align-items:center;gap:12px;background:#2b2d31;border-radius:8px;padding:12px 14px;margin-bottom:8px;border:1px solid transparent}
+#sx .sx-card:hover{border-color:#3f4147}
+#sx .sx-row{border-radius:6px;padding:8px 12px;margin-bottom:4px;background:transparent}
+#sx .sx-row:hover{background:#35373c}
+#sx .sx-grow{flex:1;min-width:0}
+#sx .sx-nm{font-size:15px;color:#f2f3f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sx .sx-big{font-size:20px;font-weight:700;color:#fff}
+#sx .sx-rname{font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sx .sx-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0}
+#sx .sx-chic{width:24px;text-align:center;color:#949ba4;font-size:18px;font-weight:700;flex-shrink:0}
+#sx .sx-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+#sx .sx-chip{font-size:11px;font-weight:600;background:#1e1f22;color:#dbdee1;border-radius:4px;padding:2px 7px}
+#sx .sx-chip.dim{color:#80848e;font-weight:500}
+#sx .sx-chip.adm{background:rgba(240,178,50,.15);color:#f0b232}
+#sx .sx-acts{display:flex;gap:6px;flex-shrink:0}
+#sx .sx-reorder{display:flex;flex-direction:column;flex-shrink:0;font-size:9px;line-height:1}
+#sx .sx-reorder button{color:#80848e;padding:3px 4px}
+#sx .sx-reorder button:hover:not(:disabled){color:#fff}
+#sx .sx-reorder button:disabled{opacity:.25;cursor:default}
+#sx .sx-btn{font-size:14px;font-weight:500;padding:6px 14px;border-radius:3px;background:#4e5058;color:#fff;white-space:nowrap}
+#sx .sx-btn:hover{background:#6d6f78}
+#sx .sx-btn.blue{background:#5865f2}#sx .sx-btn.blue:hover{background:#4752c4}
+#sx .sx-btn.green{background:#248046}#sx .sx-btn.green:hover{background:#1a6334}
+#sx .sx-btn.ghost{background:transparent;color:#dbdee1}#sx .sx-btn.ghost:hover{text-decoration:underline;background:transparent}
+#sx .sx-btn.red{background:transparent;color:#f23f43;border:1px solid #f23f43}#sx .sx-btn.red:hover{background:#da373c;color:#fff;border-color:#da373c}
+#sx .sx-empty{text-align:center;color:#80848e;font-size:14px;padding:40px 10px;line-height:1.6}
+#sx .sx-back{color:#00a8fc;font-size:14px;margin-bottom:12px}#sx .sx-back:hover{text-decoration:underline}
+#sx .sx-ov .sx-srvico{width:72px;height:72px;border-radius:50%;overflow:hidden;background:#5865f2;color:#fff;font-size:28px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#sx .sx-srvico img{width:100%;height:100%;object-fit:cover}
+#sx .sx-danger{display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid #da373c;border-radius:8px;padding:14px 16px;margin-top:28px}
+#sx .sx-dt{font-weight:700;color:#f2f3f5;margin-bottom:2px}
+/* forms */
+#sx .sx-lbl{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;color:#b5bac1;margin:14px 0 0}
+#sx .sx-hint{text-transform:none;font-weight:400;color:#80848e;letter-spacing:0;margin-left:4px}
+#sx .sx-in{display:block;width:100%;margin-top:8px;background:#1e1f22;border-radius:4px;padding:10px;color:#dbdee1;font-size:16px;font-weight:400;text-transform:none;letter-spacing:0;outline:none;box-sizing:border-box}
+#sx .sx-in:focus{box-shadow:0 0 0 2px rgba(88,101,242,.5)}
+#sx .sx-sw{display:grid;grid-template-columns:repeat(10,1fr);gap:8px;margin-top:8px;max-width:420px}
+#sx .sx-sw button,#sx .sx-sw .sx-cust{width:100%;aspect-ratio:1;border-radius:4px;border:2px solid transparent;position:relative}
+#sx .sx-sw button.on{border-color:#fff;box-shadow:0 0 0 2px #313338 inset}
+#sx .sx-cust{display:flex;align-items:center;justify-content:center;background:#1e1f22;font-size:13px;cursor:pointer;overflow:hidden}
+#sx .sx-cust input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+#sx .sx-prev{margin-top:8px;background:#2b2d31;border-radius:6px;padding:14px}
+#sx .sx-badge{display:inline-block;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.02em;color:#fff;padding:2px 7px;border-radius:4px}
+#sx .sx-perm{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid #3f4147}
+#sx .sx-perm-adm{border-bottom:1px solid #3f4147}
+#sx .sx-pn{font-size:15px;font-weight:600;color:#f2f3f5}
+#sx .sx-pd{font-size:13px;color:#949ba4;margin-top:2px}
+#sx .sx-tg{position:relative;flex-shrink:0;width:40px;height:24px;display:inline-block}
+#sx .sx-tg input{position:absolute;inset:0;opacity:0;width:100%;height:100%;margin:0;cursor:pointer;z-index:2}
+#sx .sx-tg i{position:absolute;inset:0;background:#80848e;border-radius:12px;transition:background .12s}
+#sx .sx-tg i::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .12s}
+#sx .sx-tg input:checked+i{background:#23a55a}
+#sx .sx-tg input:checked+i::after{transform:translateX(16px)}
+#sx .sx-tg input:disabled{cursor:not-allowed}#sx .sx-tg input:disabled+i{opacity:.55}
+#sx .sx-foot{position:sticky;bottom:14px;display:flex;justify-content:flex-end;gap:8px;background:#2b2d31;border-radius:8px;padding:12px 14px;margin-top:24px;box-shadow:0 -8px 16px rgba(0,0,0,.18)}
+/* the older tool pages (welcome, webhooks, auto-mod, blocked words) are drawn into this dialog too */
+#sx [data-back]{display:none}
+#sx #sx_b input:not([type=checkbox]):not([type=color]):not([type=range]),#sx #sx_b textarea,#sx #sx_b select{background:#1e1f22}
+@media (max-width:767px){
+  #sx{flex-direction:column}
+  #sx .sx-nav{flex:0 0 auto;justify-content:flex-start;overflow:auto hidden;border-bottom:1px solid #1e1f22}
+  #sx .sx-nav-in{width:auto;display:flex;align-items:center;gap:4px;padding:12px 56px 10px 12px}
+  #sx .sx-grp{display:none}
+  #sx .sx-item{width:auto;white-space:nowrap;margin:0;padding:6px 12px}
+  #sx .sx-main{padding:16px 14px 80px}
+  #sx .sx-close{top:10px;right:10px;width:auto}#sx .sx-close small{display:none}#sx .sx-close span{width:32px;height:32px;background:#2b2d31}
+  #sx .sx-card{flex-wrap:wrap}#sx .sx-acts{width:100%;justify-content:flex-end}
+  #sx .sx-sw{grid-template-columns:repeat(5,1fr)}
+  #sx .sx-foot{bottom:10px}
+}

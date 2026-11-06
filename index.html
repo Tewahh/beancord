@@ -152,33 +152,6 @@ html[data-mode=light] .tk-c{color:#6a737d}html[data-mode=light] .tk-s{color:#1a7
 <input id="sif" type="file" accept="image/*" class="hidden">
 <div id="ctx" class="hidden fixed z-50 w-56 bg-[#111214] border border-black/40 rounded-lg shadow-2xl p-1 text-sm"></div>
 <div id="vp" onclick="this.classList.add('hidden')" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"><div id="vpc" onclick="event.stopPropagation()" class="bg-[#2b2d31] rounded-2xl w-full max-w-sm text-left overflow-y-auto max-h-[90vh]"></div></div>
-<div id="rm" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"><div class="bg-[#313338] rounded-xl w-full max-w-md max-h-[85vh] overflow-y-auto">
- <div class="p-5 border-b border-black/30 flex items-center justify-between sticky top-0 bg-[#313338]"><h2 class="font-bold text-white">Custom roles</h2><button onclick="closeRoles()" class="text-[#949ba4] hover:text-white">✕</button></div>
- <div class="p-5 space-y-3">
-  <div id="rmlist" class="space-y-2"></div>
-  <button onclick="roleForm(null)" class="w-full bg-[#5865f2] text-white font-bold py-2 rounded-lg text-sm">+ New role</button>
-  <button onclick="roleTemplate('trialmod')" class="w-full text-[#f0a132] font-bold py-2 rounded-lg text-sm" style="border:1px dashed rgba(240,161,50,.5)">+ Trial Mod (ready-made)</button>
-  <div id="rmform" class="hidden border-t border-black/30 pt-4 space-y-3">
-   <p id="rf_note" class="text-xs text-[#949ba4]"></p>
-   <input id="rf_name" maxlength="16" placeholder="Role name" class="w-full bg-[#1e1f22] rounded px-3 py-2 text-white text-sm outline-none">
-   <div class="flex items-center gap-3"><span class="text-xs text-[#949ba4]">Badge color</span><input id="rf_color" type="color" value="#5865f2" class="w-14 h-9 rounded cursor-pointer bg-transparent"><span id="rf_preview" class="text-[9px] font-black uppercase px-1.5 rounded"></span></div>
-   <div><label class="block text-xs text-[#949ba4] mb-1">Hierarchy position <span class="text-[10px]">(who this role can act on, and who can act on it)</span></label>
-   <select id="rf_base" class="w-full bg-[#1e1f22] rounded px-3 py-2 text-white text-sm outline-none">
-    <option value="member">Member tier</option>
-    <option value="coowner">Co-Owner tier</option>
-    <option value="verified">Verified tier</option>
-    <option value="mod">Mod tier</option>
-    <option value="admin">Admin tier</option>
-    <option value="manager">Manager tier</option>
-   </select></div>
-   <div class="border-t border-black/30 pt-3">
-    <label class="flex items-center gap-2 text-sm text-white font-bold mb-2"><input id="rf_admin" type="checkbox" onchange="toggleAdminPerm()"> Administrator <span class="text-[10px] font-normal text-[#949ba4]">(every permission below)</span></label>
-    <div id="rf_perms" class="space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
-   </div>
-   <div class="flex gap-2"><button onclick="saveRole()" class="flex-1 bg-[#23a55a] text-white py-2 rounded-lg text-sm font-bold">Save</button><button onclick="$('rmform').classList.add('hidden')" class="flex-1 bg-[#4e5058] text-white py-2 rounded-lg text-sm">Cancel</button></div>
-  </div>
- </div>
-</div></div>
 <div id="pm" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"><div class="w-full max-w-sm bg-[#2b2d31] rounded-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
  <div id="pbanner" class="relative h-28" style="background:#5865f2"><div class="absolute right-3 top-3 flex gap-2"><label class="pill">Change banner<input id="pbi" type="file" accept="image/*" class="hidden"></label><button id="pbrm" type="button" onclick="clearBannerImg()" class="pill hidden">Remove</button></div></div>
  <div class="px-5 -mt-10 relative"><div class="relative inline-block"><div id="pavwrap" class="rounded-full" style="border:5px solid #2a2c30"></div><label title="Change picture" class="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-[#4e5058] hover:bg-[#5d6068] text-white text-xs flex items-center justify-center cursor-pointer">✎<input id="pf" type="file" accept="image/*" class="hidden"></label></div></div>
@@ -212,6 +185,7 @@ html[data-mode=light] .tk-c{color:#6a737d}html[data-mode=light] .tk-s{color:#1a7
 <script src="extras.js"></script>
 <script src="settings.js"></script>
 <script src="servertools.js"></script>
+<script src="settingshub.js"></script>
 <script src="receipts.js"></script>
 <script src="qol.js"></script>
 </body></html>

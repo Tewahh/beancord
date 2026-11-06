@@ -220,3 +220,26 @@ async function newForumPost(){
     return _add(m);
   };
 }
+
+// ---------- the blocked-word list (anyone can read it with /banwords) and nicknames obey it ----------
+let _bw={at:0,list:[]};
+async function bannedWordList(force){
+  if(!force&&Date.now()-_bw.at<60000)return _bw.list;
+  let r=await sb.rpc('bc_banned_words');            // setup/nickname_banned_words.sql: readable by everyone
+  if(r.error)r=await sb.rpc('list_banned_words');   // older fallback (staff only)
+  if(r.error)throw r.error;
+  _bw={at:Date.now(),list:(r.data||[]).map(w=>String(w).toLowerCase().trim()).filter(Boolean).sort()};
+  return _bw.list;
+}
+// the blocked word found in a piece of text, or null. Whole words/phrases only, so "class" does not trip "ass".
+async function bannedWordHit(text){
+  const t=String(text||'').trim();if(!t)return null;
+  let list;try{list=await bannedWordList()}catch(e){return null}   // the database trigger still enforces it
+  const n=(typeof slurNorm==='function'?slurNorm(t):t).toLowerCase(),flat=n.replace(/[^a-z0-9]/g,'');
+  for(const w of list){
+    const re=new RegExp('(^|[^a-z0-9])'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'($|[^a-z0-9])','i');
+    if(re.test(n))return w;
+    const f=w.replace(/[^a-z0-9]/g,'');if(f.length>=5&&flat.includes(f))return w;
+  }
+  return null;
+}

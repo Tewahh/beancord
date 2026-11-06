@@ -193,7 +193,7 @@ async function openServer(id){
   channels=c.data||[];channels.forEach(x=>chanSrv[x.id]=id);members=m.data||[];roles={};members.forEach(x=>roles[x.user_id]=x.role);if((servers.find(x=>x.id===id)||{}).is_default){defRole=roles[me.id];const nb=$('newsrvbtn');if(nb)nb.classList.toggle('hidden',defRole!=='owner')}
   if(!_migrated&&(servers.find(x=>x.id===id)||{}).is_default){_migrated=true;migrateImages()}bans=[];if(isStaff()){const {data:b}=await sb.from('server_bans').select('*').eq('server_id',id);bans=b||[]}
   {const {data:cd}=await sb.from('custom_roles').select('*').eq('server_id',id);croles=cd||[];cr={};members.forEach(x=>{if(x.custom_role)cr[x.user_id]=croles.find(y=>y.id===x.custom_role)})}
-  $('sh').innerHTML=`<span class="truncate">${esc(s.name)}</span><span class="flex items-center gap-2 flex-shrink-0"><button onclick="openWeb()" title="Beanchat — search the web" class="text-base text-[#949ba4] hover:text-white">🫘</button>${(defRole==='owner'||myPerm('manage_roles'))?'<button onclick="openRoles()" title="Manage roles" class="text-base text-[#949ba4] hover:text-white">⚙</button>':''}${isStaff()?'<button onclick="openServerTools()" title="Server tools: auto-mod, rules, webhooks" class="text-base text-[#949ba4] hover:text-white">🛡</button>':''}${(isStaff()||myPerm('manage_channels'))?'<button onclick="newChannel()" class="text-xl text-[#949ba4] hover:text-white">+</button>':''}</span>`;
+  $('sh').innerHTML=`<span class="truncate">${esc(s.name)}</span><span class="flex items-center gap-2 flex-shrink-0"><button onclick="openWeb()" title="Beanchat — search the web" class="text-base text-[#949ba4] hover:text-white">🫘</button>${canSettings()?'<button onclick="openServerSettings()" title="Server Settings" class="text-base text-[#949ba4] hover:text-white">⚙</button>':''}</span>`;
   $('mem').classList.remove('hidden');drawChannels();try{drawMembers()}catch(e){console.error('drawMembers failed:',e);$('mem').innerHTML='<p class="text-xs text-[#f23f43]">Member list failed to load. Check the browser console (F12) for details.</p>'}
   watchVoiceRosters();
   {const first=channels.find(x=>!x.is_voice);if(first)await openChannel(first.id)}
@@ -487,6 +487,7 @@ function pickAvatar(f){return new Promise((res,rej)=>{const r=new FileReader();r
   $('pc').oninput=prev;$('pn').oninput=prev;$('pbn').oninput=prev;
   async function saveProfile(){
     if(slurBlock($('pn').value,'That nickname')||slurBlock($('pb').value,'That bio'))return;
+    if(canNickname()&&await bannedWordHit($('pn').value))return alert('That nickname contains a word that is blocked in this server.');
     const u={color:$('pc').value,bio:$('pb').value.trim()||null,banner:$('pbn').value};if(canNickname())u.nickname=$('pn').value.trim()||null;
     if(newAvatarBlob){try{u.avatar=await uploadImg(newAvatarBlob,'avatar')}catch(e){return alert('Avatar upload failed: '+e.message)}}
     if(newBannerBlob){
@@ -540,7 +541,7 @@ async function runCmd(line){
   if(cmd==='newrole'){if(!srvId)return sys('Open a server first.');const n=P[1],c=P[2],b=(P[3]||'').toLowerCase();if(!n||!/^#[0-9a-fA-F]{6}$/.test(c||'')||!['member','verified','mod','admin','manager','coowner'].includes(b))return sys('Usage: /newrole name #hexcolor member|verified|mod|admin|manager|coowner');return rpc('create_role',{sid:srvId,rname:n,rcolor:c,rbase:b},'Role "'+n+'" created. Give it with /giverole username '+n)}
   if(cmd==='delrole'){const r=croles.find(x=>x.name.toLowerCase()===(P[1]||'').toLowerCase());if(!r)return sys('No custom role with that name.');return rpc('delete_role',{rid:r.id},'Role deleted')}
   if(cmd==='banword'||cmd==='unbanword')return rpc(cmd==='banword'?'ban_word':'unban_word',{w:(P[1]||'').toLowerCase()},cmd+': '+P[1]);
-  if(cmd==='banwords'){const {data,error}=await sb.rpc('list_banned_words');return sys(error?error.message:'Banned words: '+(data||[]).join(', '))}
+  if(cmd==='banwords'){try{const w=await bannedWordList(true);return sys(w.length?'Blocked words: '+w.join(', '):'No blocked words are set.')}catch(e){return sys(e.message||'Could not load the list.')}}
   if(cmd==='delserver')return sys('/delserver has been retired. Right-click a server icon and choose Delete server instead.');
   if(cmd==='auditlog'){if(!srvId)return sys('Open a server first.');const {data,error}=await sb.from('audit_log').select('*').eq('server_id',srvId).order('created_at',{ascending:false}).limit(20);if(error)return sys(error.message);if(!data.length)return sys('No audit log entries yet.');data.forEach(e=>{const a=profiles[e.actor],t=profiles[e.target];sys((a?a.username:'someone')+' '+e.action+(t?' '+t.username:'')+(e.detail?' ('+e.detail+')':'')+' — '+new Date(e.created_at).toLocaleString())});return;}
   if(cmd==='iplog'){const {data,error}=await sb.rpc('get_ip_log_all',{lim:30});if(error)return sys(error.message);if(!data.length)return sys('No log entries yet.');data.forEach(r=>sys((r.success?'✓':'✗')+' '+r.action+' "'+r.username_tried+'" from '+r.ip+' — '+new Date(r.created_at).toLocaleString()));return;}
@@ -579,8 +580,32 @@ async function runCmd(line){
   if(cmd==='role')return sys('/role has been retired. Manage roles from the gear icon next to the server name.');
   sys('Unknown command. Type /help');
 }
-let ment={},sugList=[],sugIdx=0,sugStart=0,sugAt=false;
-const CMDS=['luck','balance','coinflip','slots','roulette','dice','blackjack','hit','stand','double','welcome','goodbye','poll','polls','endpoll','warn','warnings','clearwarns','purge','slowmode','announce','seen','stats','mutes','automod','usercount','serverinfo','userinfo','topbeans','roll','flip','8ball','choose','rate','hug','beanfact','ping','cmds','addcmd','delcmd','botset','bold','ban','unban','mute','unmute','kick','nick','giverole','newrole','delrole','deleteuser','gift','switch','banip','unbanip','hwidban','unhwidban','ips','alts','iplog','banword','unbanword','banwords','auditlog','unblock','reports','help'],ROLES=['manager','admin','goodgirl','mod','verified','member'];
+let ment={},sugList=[],sugIdx=0,sugStart=0,sugAt=false,sugCmd=false,customCmds=[],customCmdsFor=null;
+// custom commands made with /addcmd are listed on / as well (quietly skipped if the table can't be read)
+async function loadCustomCmds(){if(!srvId||customCmdsFor===srvId)return;customCmdsFor=srvId;try{const {data}=await sb.from('bot_commands').select('name').eq('server_id',srvId);customCmds=(data||[]).map(x=>x.name).sort();if($('i').value.startsWith('/'))suggest()}catch(e){customCmds=[]}}
+// every slash command: [name, usage, what it does, who] (who: '' = anyone, 'mod', 'admin', 'owner' …). Typing / lists them all.
+const CMD_INFO=[
+['help','','Show what BeanBot and the staff commands do',''],['cmds','','List every BeanBot command, custom ones too',''],
+['balance','[user]','Show your bean balance',''],['topbeans','','The five richest people in beans',''],['luck','','See if a luck event is running',''],
+['coinflip','100 heads','Bet beans on a coin flip',''],['slots','100','Spin the slot machine',''],['roulette','100 red','Bet on red, black, green, odd, even or a number',''],['dice','100 4','Guess the dice roll, 1 to 6',''],
+['blackjack','100','Start a blackjack hand',''],['hit','','Blackjack: take a card',''],['stand','','Blackjack: keep your hand',''],['double','','Blackjack: double your bet and take one card',''],
+['roll','2d6','Roll dice',''],['flip','','Flip a coin',''],['8ball','question','Ask the magic 8-ball',''],['choose','a | b | c','Let BeanBot pick one',''],['rate','thing','BeanBot rates it out of 10',''],['hug','@user','Give someone a hug',''],['beanfact','','A random bean fact',''],['ping','','Check BeanBot is awake',''],
+['usercount','','How many members and accounts',''],['serverinfo','','Server details',''],['userinfo','[user]','Info about a person',''],['seen','[user]','When someone was last online',''],['stats','','Messages in the last 24 hours',''],
+['poll','question | a | b','Start a poll (add 1h to auto-close it)',''],['polls','','Open polls',''],['endpoll','number','Close a poll','poll starter or mod'],
+['banwords','','Show the blocked words list',''],['unblock','user','Unblock someone you blocked',''],['warnings','[user]','See warnings','mod to see others'],
+['warn','user reason','Warn someone','mod'],['purge','20 [user]','Delete recent messages','mod'],['mutes','','Who is muted or banned right now','mod'],['mute','user minutes','Mute someone','mod'],['unmute','user','Unmute someone','mod'],
+['kick','user','Remove someone from the server','mod'],['ban','user [minutes]','Ban someone','admin'],['unban','user','Lift a ban','admin'],['clearwarns','user','Clear someone\'s warnings','admin'],
+['slowmode','10','Slow mode for this channel (off to stop)','admin'],['announce','text','BeanBot announcement','admin'],['bold','text','Post big bold text','admin'],['nick','user name','Change someone\'s nickname','admin'],
+['welcome','','Welcome message settings','admin'],['goodbye','','Goodbye message settings','admin'],['addcmd','name text','Make a custom command','admin'],['delcmd','name','Delete a custom command','admin'],['botset','disable roll','Turn a BeanBot command on or off','admin'],
+['banword','word','Add a blocked word','admin'],['unbanword','word','Remove a blocked word','admin'],['auditlog','','Recent staff actions','admin'],['reports','','Reported messages','admin'],
+['giverole','user role','Give a role','admin'],['role','user role','Change someone\'s role','admin'],['newrole','name #color tier','Make a custom role','admin'],['delrole','name','Delete a custom role','admin'],
+['automod','','Auto-mod settings','co-owner'],['ips','user','IP addresses used by an account','admin'],['alts','user','Accounts that share an IP','admin'],['iplog','','Recent logins by IP','admin'],
+['banip','ip','Ban an IP address','admin'],['unbanip','ip','Unban an IP address','admin'],['hwidban','user','Ban someone\'s device','admin'],['unhwidban','user','Unban a device','admin'],
+['deleteuser','user','Permanently delete an account','owner'],['gift','user amount','Give someone beans','owner'],['switch','user','Switch to another account','owner'],['reload','','Reload everyone\'s page','owner'],
+['beanbottest','','BeanBot self-test','owner'],['beanbotluck','20 60','Start a luck event','owner'],['beanbotpoor','user amount','Take beans from someone','owner'],['ecopurge','','Reset everyone\'s beans','owner']
+];
+const OWNER_ONLY_CMDS=new Set(['beanbottest','beanbotluck','beanbotpoor','ecopurge']);
+const CMDS=CMD_INFO.map(x=>x[0]),ROLES=['manager','admin','goodgirl','mod','verified','member'];
 function roleSel(m,u,self){if(self||!canManage(m.role))return '';const o=ROLES.filter(r=>rank(r)<rank(myRole())).map(r=>`<option ${r===m.role?'selected':''}>${r}</option>`).join('');return `<select onchange="setRole('${u}',this.value)" class="mt-1 bg-[#1e1f22] text-[10px] text-[#949ba4] rounded px-1">${o}</select>`}
 const BOLDMARK='[[big]]';
 function plainText(c){
@@ -602,9 +627,10 @@ function embedBox(o){
   return `<div style="display:flex;max-width:30rem;margin-top:4px;background:#2b2d31;border-left:4px solid ${color};border-radius:6px;overflow:hidden;white-space:normal"><div style="padding:10px 12px;flex:1;min-width:0">${o.t?`<div class="font-bold text-sm text-white break-words">${mention(esc(o.t))}</div>`:''}${o.d?`<div class="text-sm text-[#dbdee1] mt-1 break-words" style="white-space:pre-wrap">${mention(esc(o.d))}</div>`:''}${fields?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:8px">${fields}</div>`:''}${o.ft?`<div class="text-[11px] text-[#949ba4] mt-2">${esc(o.ft)}</div>`:''}</div>${thumb}</div>`;
 }
 function autoEmbed(c){
-  const lines=String(c).split('\n');const t=lines[0],d=lines.slice(1).join('\n');
+  let by='';c=String(c).replace(/\n— ran by ([^\n]+)$/,(_,n)=>{by=n;return ''});   // BeanBot adds this line to everything it says
+  const lines=c.split('\n');const t=lines[0],d=lines.slice(1).join('\n');
   const col=/^(🔇|🚫|❌|⛔)/u.test(t)?'#f23f43':/^(✅|🍀|🏆|🎉|🎁|👋)/u.test(t)?'#23a55a':/^(⚠️|🌑)/u.test(t)?'#f0b232':/^(📢)/u.test(t)?'#e67e22':/^(🎰|🎲|🪙|🎡|🫘|💰)/u.test(t)?'#eb459e':'#5865f2';
-  return embedBox({t,d,c:col,ft:'BeanBot'});
+  return embedBox({t,d,c:col,ft:'BeanBot'+(by?' · ran by '+by:'')});
 }
 function fmt(m){
   const c=String(m.content||'');let h;{const g=gifHtml(c);if(g&&!isBot(profiles[m.sender_id]))return g}
@@ -646,8 +672,8 @@ async function loadEmojiMap(){
 const emojify=t=>String(t).replace(/:([a-z0-9_+-]{1,32}):/gi,(m,n)=>emojiMap[n.toLowerCase()]||m);
 loadEmojiMap();
 function suggest(){
-  const el=$('i'),v=el.value.slice(0,el.selectionStart);let m,list=[],start=0;sugAt=false;sugEmoji=false;
-  if(m=v.match(/^\/(\w*)$/)){start=1;list=CMDS.filter(c=>c.startsWith(m[1].toLowerCase()))}
+  const el=$('i'),v=el.value.slice(0,el.selectionStart);let m,list=[],start=0;sugAt=false;sugEmoji=false;sugCmd=false;
+  if(m=v.match(/^\/(\w*)$/)){start=1;sugCmd=true;const q=m[1].toLowerCase();loadCustomCmds();list=[...CMDS.filter(c=>!OWNER_ONLY_CMDS.has(c)||myRole()==='owner'),...customCmds.filter(c=>!CMDS.includes(c))].filter(c=>c.startsWith(q))}
   else if(m=v.match(/^\/(ban|unban|mute|unmute|kick|unblock|nick|giverole|deleteuser|gift|switch|banip|unbanip|devalts|hwidban|unhwidban|ips)\s+@?(\w*)$/i)){start=v.length-m[2].length;list=names().filter(n=>n.startsWith(m[2].toLowerCase()))}
   else if(m=v.match(/^\/role\s+\S+\s+(\w*)$/i)){start=v.length-m[1].length;list=ROLES.filter(r=>r.startsWith(m[1].toLowerCase()))}
   else if(m=v.match(/(?:^|\s)@(\w*)$/)){sugAt=true;start=v.length-m[1].length;
@@ -662,10 +688,15 @@ function suggest(){
     list=[...keys.filter(k=>k.startsWith(q)).sort((a,b)=>a.length-b.length||a.localeCompare(b)),...keys.filter(k=>!k.startsWith(q)&&k.includes(q)).sort((a,b)=>a.length-b.length||a.localeCompare(b))].slice(0,12);
     if(list.length){sugEmoji=true;start=v.length-m[1].length-1}
   }
-  sugList=list.slice(0,40);sugStart=start;if(sugIdx>=sugList.length)sugIdx=0;drawSug();
+  sugList=sugCmd?list:list.slice(0,40);sugStart=start;if(sugIdx>=sugList.length)sugIdx=0;drawSug();
 }
 function drawSug(){const e=$('sug');if(!sugList.length){e.classList.add('hidden');return}
-  e.classList.remove('hidden');e.innerHTML=sugList.map((x,i)=>`<div onmousedown="pickSug(${i});return false" class="px-2 py-1 rounded cursor-pointer ${i===sugIdx?'bg-[#404249] text-white':'text-[#b5bac1]'}">${sugEmoji?`<span class="inline-block w-6">${emojiMap[x]}</span> :${esc(x)}:`:(sugAt?'@':'')+esc(x)}</div>`).join('');
+  e.classList.remove('hidden');e.style.maxHeight=sugCmd?'min(22rem,45vh)':'';
+  const info=Object.fromEntries(CMD_INFO.map(x=>[x[0],x]));
+  e.innerHTML=sugList.map((x,i)=>{
+    const on=i===sugIdx,cls=`px-2 py-1 rounded cursor-pointer ${on?'bg-[#404249] text-white':'text-[#b5bac1]'}`;
+    if(sugCmd){const c=info[x];return `<div onmousedown="pickSug(${i});return false" class="${cls} flex items-baseline gap-2"><span class="font-semibold text-white flex-shrink-0">/${esc(x)}${c&&c[1]?` <span class="font-normal text-[#80848e]">${esc(c[1])}</span>`:''}</span><span class="text-xs text-[#949ba4] truncate flex-1 min-w-0">${esc(c?c[2]:'Custom command')}</span>${c&&c[3]?`<span class="text-[10px] uppercase font-bold text-[#80848e] flex-shrink-0">${esc(c[3])}</span>`:''}</div>`}
+    return `<div onmousedown="pickSug(${i});return false" class="${cls}">${sugEmoji?`<span class="inline-block w-6">${emojiMap[x]}</span> :${esc(x)}:`:(sugAt?'@':'')+esc(x)}</div>`}).join('');
   const a=e.children[sugIdx];if(a)a.scrollIntoView({block:'nearest'})}
 function pickSug(i){const el=$('i'),b=el.value.slice(0,sugStart),a=el.value.slice(el.selectionStart).trimStart(),w=sugEmoji?emojiMap[sugList[i]]:sugList[i];
   el.value=b+w+' '+a;el.focus();const pos=(b+w+' ').length;el.setSelectionRange(pos,pos);sugIdx=0;suggest()}
@@ -1609,53 +1640,9 @@ async function touchSeen(){try{await sb.rpc('touch_last_seen')}catch(e){}}
 setInterval(()=>{if(!document.hidden&&me)touchSeen()},60000);
 
 
-// ===== custom role manager (owner only) =====
-let rfEditing=null;
-function openRoles(){if(!srvId)return;drawRoles();$('rmform').classList.add('hidden');$('rm').classList.remove('hidden')}
-function closeRoles(){$('rm').classList.add('hidden')}
-function drawRoles(){
-  const sorted=[...croles].sort((a,b)=>(b.position||0)-(a.position||0));
-  $('rmlist').innerHTML=sorted.length?sorted.map((r,i)=>{
-    const count=members.filter(m=>m.custom_role===r.id).length;
-    const p=r.perms||{};const plist=p.administrator?'Administrator (all permissions)':(PERMS.filter(([k])=>p[k]).map(([k,l])=>l).join(', ')||'No extra permissions');
-    return `<div class="bg-[#2b2d31] rounded-lg px-3 py-2"><div class="flex items-center justify-between"><div class="flex items-center gap-2 min-w-0"><span class="flex flex-col text-[10px] text-[#949ba4] flex-shrink-0 -my-1"><button onclick="moveRole('${r.id}',1)" ${i===0?'disabled':''} class="${i===0?'opacity-20':'hover:text-white'}">▲</button><button onclick="moveRole('${r.id}',-1)" ${i===sorted.length-1?'disabled':''} class="${i===sorted.length-1?'opacity-20':'hover:text-white'}">▼</button></span><span class="text-[9px] font-black uppercase px-1.5 rounded text-white flex-shrink-0" style="background:${esc(r.color)}">${esc(r.name)}</span><span class="text-xs text-[#949ba4] truncate">${r.base} tier · ${count} member${count===1?'':'s'}</span></div><div class="flex gap-2 text-xs flex-shrink-0"><button onclick="assignRole('${r.id}')" class="text-[#5865f2]">Assign</button><button onclick="roleForm('${r.id}')" class="text-[#949ba4] hover:text-white">Edit</button><button onclick="removeRole('${r.id}')" class="text-[#f23f43]">Delete</button></div></div><div class="text-[10px] text-[#80848e] mt-1 truncate">${esc(plist)}</div></div>`
-  }).join(''):'<p class="text-xs text-[#949ba4]">No custom roles yet. Higher roles in this list show above lower ones in the member list.</p>';
-}
-async function moveRole(rid,delta){const {error}=await sb.rpc('move_role',{rid,delta});if(error)return alert(error.message);await openServer(srvId);openRoles()}
-function roleForm(rid){
-  rfEditing=rid;const r=rid?croles.find(x=>x.id===rid):null;
-  $('rf_name').value=r?r.name:'';$('rf_color').value=r?r.color:'#5865f2';$('rf_base').value=r?r.base:'member';
-  renderPermChecks(r?r.perms:null);
-  $('rf_note').textContent='';updateSwatch();$('rmform').classList.remove('hidden');$('rf_name').focus();
-}
-function updateSwatch(){const e=$('rf_preview');e.textContent=$('rf_name').value.trim()||'PREVIEW';e.style.background=$('rf_color').value}
-$('rf_name').addEventListener('input',updateSwatch);$('rf_color').addEventListener('input',updateSwatch);
-function roleTemplate(k){
-  roleForm(null);
-  if(k==='trialmod'){
-    $('rf_name').value='Trial Mod';$('rf_color').value='#f0a132';$('rf_base').value='verified';
-    renderPermChecks({manage_messages:true,timeout_members:true});
-    $('rf_note').textContent='Trial Mod: can delete messages, pin, and mute regular members. They cannot kick, ban, or change channels, and mods and up outrank them. Change anything below, then press Save.';
-    updateSwatch();
-  }
-}
-async function saveRole(){
-  const name=$('rf_name').value.trim(),color=$('rf_color').value,base=$('rf_base').value,perms=readPermChecks();
-  if(!name)return alert('Give the role a name.');
-  const {error}=rfEditing?await sb.rpc('update_role',{rid:rfEditing,rname:name,rcolor:color,rbase:base,rperms:perms}):await sb.rpc('create_role',{sid:srvId,rname:name,rcolor:color,rbase:base,rperms:perms});
-  if(error)return alert(error.message);
-  await openServer(srvId);openRoles();
-}
-async function removeRole(rid){if(!(await askConfirm('Delete this role? Anyone using it loses it.')))return;const {error}=await sb.rpc('delete_role',{rid});if(error)return alert(error.message);await openServer(srvId);openRoles()}
-async function assignRole(rid){const n=(await askText('Give this role to which username? (blank cancels)'));if(!n)return;const u=Object.values(profiles).find(p=>p.username===n.trim().toLowerCase().replace(/^@/,''));if(!u)return alert('No user with that username.');
-  const {error}=await sb.rpc('give_role',{sid:srvId,uid:u.id,rid});if(error)return alert(error.message);await openServer(srvId);openRoles()}
+// ===== custom roles: the manager lives in settingshub.js (Server Settings > Roles) =====
 const PERMS=[['manage_channels','Manage Channels','Create, edit, reorder and delete channels'],['manage_messages','Manage Messages','Pin messages and delete other members\' messages'],['kick_members','Kick Members','Remove members ranked below this role'],['ban_members','Ban Members','Ban members ranked below this role'],['timeout_members','Timeout Members','Mute members ranked below this role'],['view_audit_log','View Audit Log','See the server\'s history of bans, kicks and role changes'],['manage_roles','Manage Roles','Create, edit, reorder and delete roles (can only hand out permissions they have themselves)'],['delete_accounts','Delete Accounts','Permanently delete accounts of members ranked below them. Cannot be undone'],['attach_files','Attach Files','Send images and files in chat']];
-function renderPermChecks(saved){
-  saved=saved||{};
-  $('rf_perms').innerHTML=PERMS.map(([k,label,desc])=>`<label class="flex items-start gap-2 text-xs text-[#dbdee1] py-1"><input type="checkbox" data-perm="${k}" ${saved[k]?'checked':''} class="mt-0.5"><span><span class="block font-semibold">${esc(label)}</span><span class="block text-[#949ba4]">${esc(desc)}</span></span></label>`).join('');
-  $('rf_admin').checked=!!saved.administrator;
-  toggleAdminPerm();
-}
+// renderPermChecks lives in settingshub.js
 function toggleAdminPerm(){
   const on=$('rf_admin').checked;
   $('rf_perms').querySelectorAll('input[type=checkbox]').forEach(c=>{c.disabled=on;if(on)c.checked=true});
