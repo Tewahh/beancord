@@ -617,7 +617,8 @@ function plainText(c){
   if(c.startsWith(BOLDMARK))return c.slice(BOLDMARK.length).trim();
   return c;
 }
-const isBot=p=>!!p&&p.username==='beanbot';
+const BOT_NAMES=['beanbot','missbeanbot'];
+const isBot=p=>!!p&&BOT_NAMES.includes(p.username);
 const BOTBADGE='<span class="text-[9px] font-black uppercase text-white px-1.5 rounded bg-[#5865f2]">BOT</span>';
 
 // ===== BeanBot messages drawn as boxes (like a Discord webhook embed) =====
