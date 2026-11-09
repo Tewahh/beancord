@@ -114,7 +114,7 @@ function shRoleEdit(b){
   <div id="rf_perms"></div>
   <div class="sx-foot"><button class="sx-btn ghost" onclick="shGo('roles')">Cancel</button><button class="sx-btn green" onclick="saveRole()">Save role</button></div>`;
   $('rf_name').value=r?r.name:'';$('rf_color').value=r?r.color:'#5865f2';
-  renderPermChecks(r?r.perms:null);
+  renderPermChecks(r?r.perms:{add_reactions:true});
   const upd=()=>{const e=$('rf_preview');e.textContent=$('rf_name').value.trim()||'new role';e.style.background=$('rf_color').value;
     b.querySelectorAll('.sx-sw [data-c]').forEach(x=>x.classList.toggle('on',x.dataset.c.toLowerCase()===$('rf_color').value.toLowerCase()))};
   $('rf_name').addEventListener('input',upd);$('rf_color').addEventListener('input',upd);
@@ -123,7 +123,7 @@ function shRoleEdit(b){
 }
 function shRoleTemplate(){
   $('rf_name').value='Trial Mod';$('rf_color').value='#f0a132';
-  renderPermChecks({manage_messages:true,timeout_members:true});
+  renderPermChecks({manage_messages:true,timeout_members:true,add_reactions:true});
   const n=$('rf_note');n.style.display='';n.textContent='Trial Mod: can delete messages, pin, and mute regular members. They cannot kick, ban or change channels, and mods and up outrank them. Change anything, then press Save role.';
   $('rf_name').dispatchEvent(new Event('input'));
 }

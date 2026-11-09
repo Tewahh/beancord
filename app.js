@@ -203,7 +203,7 @@ async function openServer(id){
   srvId=id;delete unreadSrv[id];delete mentSrv[id];await loadProfiles(600000);await loadServers();
   const s=servers.find(x=>x.id===id);
   const [c,m]=await Promise.all([sb.from('channels').select('*').eq('server_id',id).order('position',{nullsFirst:false}).order('created_at'),sb.from('server_members').select('*').eq('server_id',id)]);
-  channels=c.data||[];channels.forEach(x=>chanSrv[x.id]=id);members=m.data||[];roles={};members.forEach(x=>roles[x.user_id]=x.role);if((servers.find(x=>x.id===id)||{}).is_default){defRole=roles[me.id];const nb=$('newsrvbtn');if(nb)nb.classList.toggle('hidden',defRole!=='owner')}
+  channels=c.data||[];channels.forEach(x=>chanSrv[x.id]=id);members=m.data||[];if(members.some(x=>!profiles[x.user_id]))await loadProfiles();roles={};members.forEach(x=>roles[x.user_id]=x.role);if((servers.find(x=>x.id===id)||{}).is_default){defRole=roles[me.id];const nb=$('newsrvbtn');if(nb)nb.classList.toggle('hidden',defRole!=='owner')}
   if(!_migrated&&(servers.find(x=>x.id===id)||{}).is_default){_migrated=true;migrateImages()}{const {data:cd}=await sb.from('custom_roles').select('*').eq('server_id',id);croles=cd||[];cr={};members.forEach(x=>{if(x.custom_role)cr[x.user_id]=croles.find(y=>y.id===x.custom_role)})}
   if((servers.find(x=>x.id===id)||{}).is_default){defCr=cr[me.id]||null;defRk=rankOf(me.id)}
   bans=[];if(isStaff()){const {data:b}=await sb.from('server_bans').select('*').eq('server_id',id);bans=b||[]}
@@ -817,16 +817,21 @@ let replyTo=null,rx={},blocked=new Set(),msgCache={};
 const QUICK=['👍','❤️','😂','🔥'],EMOJIS=['👍','❤️','😂','🔥','😮','😢','🎉','👀','🙏','💯','😡','🤔','✅','❌','👏','😎'];
 async function loadBlocks(){const {data}=await sb.from('blocks').select('*');blocked=new Set((data||[]).map(b=>b.blocked))}
 function replyLine(m){if(!m.reply_to)return '';const r=msgCache[m.reply_to],p=r&&profiles[r.sender_id];return `<div onclick="event.stopPropagation();jumpReply('${m.reply_to}')" class="reply-ref text-[11px] text-[#949ba4] truncate cursor-pointer hover:text-[#dbdee1]" title="Jump to the original message">↪ ${r?'<b class="font-semibold">'+esc(dn(p))+'</b> '+esc(plainText(r.content).slice(0,60)):'<i>original message</i>'}</div>`}
-function drawRx(id){const e=$('rx_'+id);if(!e)return;const g={};(rx[id]||[]).forEach(x=>{(g[x.emoji]=g[x.emoji]||[]).push(x.user_id)});
+function drawRx(id){const e=$('rx_'+id);if(!e)return;rxFetchMissing(id);const g={};(rx[id]||[]).forEach(x=>{(g[x.emoji]=g[x.emoji]||[]).push(x.user_id)});
   e.innerHTML=Object.entries(g).map(([em,u])=>`<button onclick="toggleRx('${id}','${em}')" oncontextmenu="rxWho(event,'${id}','${em}')" title="${esc(rxNames(u))}" class="px-2 py-0.5 rounded-full text-xs border ${u.includes(me.id)?'bg-[#5865f2]/30 border-[#5865f2]':'bg-[#2b2d31] border-[#3f4147]'}">${em} ${u.length}</button>`).join('')}
-const rxNames=u=>u.map(i=>i===me.id?'You':dn(profiles[i])||'someone').join(', ');
+const _prTried=new Set();
+const rxNames=u=>u.map(i=>i===me.id?'You':profiles[i]?dn(profiles[i]):'Loading…').join(', ');
+const _rxTried=new Set();
+async function rxFetchMissing(id){const miss=[...new Set((rx[id]||[]).map(x=>x.user_id))].filter(i=>!profiles[i]&&!_rxTried.has(i));if(!miss.length)return;miss.forEach(i=>_rxTried.add(i));
+  try{const {data}=await sb.from('profiles').select('*').in('id',miss);if(data&&data.length){data.forEach(p=>profiles[p.id]=p);drawRx(id)}}catch(e){}}
 function rxWho(e,id,em){e.preventDefault();const u=(rx[id]||[]).filter(x=>x.emoji===em).map(x=>x.user_id);
-  _modal(null,`<div class="text-sm font-bold text-white mb-3">${em} · ${u.length} reaction${u.length===1?'':'s'}</div><div class="space-y-2 max-h-72 overflow-y-auto">${u.map(i=>`<div class="flex items-center gap-2">${av(profiles[i],6)}<span class="text-sm" style="${nameCss(profiles[i])}">${esc(dn(profiles[i]))}</span></div>`).join('')}</div><div class="mt-4"><button data-no class="w-full bg-[#4e5058] hover:bg-[#5d6068] text-white py-2 rounded-lg text-sm">Close</button></div>`,(d,done)=>{d.querySelector('[data-no]').onclick=()=>done(null)})}
+  _modal(null,`<div class="text-sm font-bold text-white mb-3">${em} · ${u.length} reaction${u.length===1?'':'s'}</div><div class="space-y-2 max-h-72 overflow-y-auto">${u.map(i=>`<div class="flex items-center gap-2">${av(profiles[i],6)}<span class="text-sm" style="${nameCss(profiles[i])}">${profiles[i]?esc(dn(profiles[i])):'Deleted user'}</span></div>`).join('')}</div><div class="mt-4"><button data-no class="w-full bg-[#4e5058] hover:bg-[#5d6068] text-white py-2 rounded-lg text-sm">Close</button></div>`,(d,done)=>{d.querySelector('[data-no]').onclick=()=>done(null)})}
 async function toggleRx(id,emoji){
+  if(defRole!==null&&!defPerm('add_reactions')&&!(rx[id]||[]).some(x=>x.user_id===me.id&&x.emoji===emoji))return alert('Only members with a role that has the Add Reactions permission can react.');
   const m=msgCache[id],dm=!!m&&!m.channel_id,kind=m&&m.group_id?'group':'dm',T=dm?'dm_reactions':'reactions';
   const mine=(rx[id]||[]).find(x=>x.user_id===me.id&&x.emoji===emoji);
   if(mine){let q=sb.from(T).delete().eq('message_id',id).eq('user_id',me.id).eq('emoji',emoji);if(dm)q=q.eq('kind',kind);const {error}=await q;if(error)return alert(error.message);rx[id]=rx[id].filter(x=>x!==mine)}
-  else{const row={message_id:id,emoji};if(dm)row.kind=kind;const {error}=await sb.from(T).insert(row);if(error)return alert(error.message.includes('row-level')||/banned|muted/i.test(error.message)?'You cannot react right now.':/relation|schema cache|does not exist/i.test(error.message)?'Run setup/dm_and_saved.sql in Supabase to enable reactions in DMs.':error.message);(rx[id]=rx[id]||[]).push({message_id:id,user_id:me.id,emoji})}
+  else{const row={message_id:id,emoji};if(dm)row.kind=kind;const {error}=await sb.from(T).insert(row);if(error)return alert(error.message.includes('row-level')||/banned|muted|Add Reactions/i.test(error.message)?'You cannot react right now.':/relation|schema cache|does not exist/i.test(error.message)?'Run setup/dm_and_saved.sql in Supabase to enable reactions in DMs.':error.message);(rx[id]=rx[id]||[]).push({message_id:id,user_id:me.id,emoji})}
   drawRx(id)}
 function hideCtx(){$('ctx').classList.add('hidden')}
 function showCtx(x,y,h){const c=$('ctx');c.innerHTML=h;c.classList.remove('hidden');c.style.left=Math.max(4,Math.min(x,innerWidth-c.offsetWidth-8))+'px';c.style.top=Math.max(4,Math.min(y,innerHeight-c.offsetHeight-8))+'px'}
@@ -874,6 +879,7 @@ async function profGiveRole(uid,rid){
 function closeVp(){$('vp').classList.add('hidden')}
 function linkify(t){return esc(t).replace(/(https?:\/\/[^\s<"]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="text-[#4f9cf5] hover:underline">$1</a>')}
 function showProfile(uid){
+  if(!profiles[uid]&&!_prTried.has(uid)){_prTried.add(uid);sb.from('profiles').select('*').eq('id',uid).maybeSingle().then(({data})=>{if(data){profiles[uid]=data;if(!$('vp').classList.contains('hidden'))showProfile(uid)}})}
   const p=profiles[uid]||{username:'?'},r=roles[uid],isMe=uid===me.id;
   const on=isMe||online.has(uid);
   const banner=/^#[0-9a-fA-F]{6}$/.test(p.banner||'')?p.banner:'#5865f2';
@@ -1740,7 +1746,7 @@ setInterval(()=>{if(!document.hidden&&me)touchSeen()},300000);
 
 
 // ===== custom roles: the manager lives in settingshub.js (Server Settings > Roles) =====
-const PERMS=[['manage_channels','Manage Channels','Create, edit, reorder and delete channels'],['manage_messages','Manage Messages','Pin messages and delete other members\' messages'],['kick_members','Kick Members','Remove members ranked below this role'],['ban_members','Ban Members','Ban members ranked below this role'],['timeout_members','Timeout Members','Mute members ranked below this role'],['view_audit_log','View Audit Log','See the server\'s history of bans, kicks and role changes'],['manage_roles','Manage Roles','Create, edit, reorder and delete roles (can only hand out permissions they have themselves)'],['delete_accounts','Delete Accounts','Permanently delete accounts of members ranked below them. Cannot be undone'],['attach_files','Attach Files','Send images and files in chat'],['manage_server','Manage Server','Welcome and goodbye messages, announcements, bold posts, bot commands, webhooks and the other server settings'],['screenshare','Share Screen','Share their screen in voice calls'],
+const PERMS=[['manage_channels','Manage Channels','Create, edit, reorder and delete channels'],['manage_messages','Manage Messages','Pin messages and delete other members\' messages'],['kick_members','Kick Members','Remove members ranked below this role'],['ban_members','Ban Members','Ban members ranked below this role'],['timeout_members','Timeout Members','Mute members ranked below this role'],['view_audit_log','View Audit Log','See the server\'s history of bans, kicks and role changes'],['manage_roles','Manage Roles','Create, edit, reorder and delete roles (can only hand out permissions they have themselves)'],['delete_accounts','Delete Accounts','Permanently delete accounts of members ranked below them. Cannot be undone'],['attach_files','Attach Files','Send images and files in chat'],['add_reactions','Add Reactions','React to messages with emoji'],['manage_server','Manage Server','Welcome and goodbye messages, announcements, bold posts, bot commands, webhooks and the other server settings'],['screenshare','Share Screen','Share their screen in voice calls'],
 ['ban_ips','Ban IPs','Ban an account\'s IP address (people ranked below them)'],['ban_devices','Ban Devices','Ban and unban a person\'s devices'],['view_ips','View IPs','See IP addresses, logins and linked accounts (/ips, /alts, /iplog)'],['manage_nicknames','Change Nicknames','Change other people\'s nicknames and their own'],['manage_words','Manage Blocked Words','Add and remove blocked words'],['manage_automod','Manage Auto-mod','Change the auto-mod settings'],['manage_shop','Manage Shop','Create, edit and delete shop tags']];
 // renderPermChecks lives in settingshub.js
 function toggleAdminPerm(){
