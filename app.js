@@ -216,14 +216,13 @@ function drawMembers(){
     const rows=g.items.sort((a,b2)=>nm(a).localeCompare(nm(b2))).map(m=>{
       const p=profiles[m.user_id]||{},self=m.user_id===me.id,u=m.user_id,acts=[];
       if(canManage(m.role)&&!self)acts.push(b('Kick',`kick('${u}')`));
-      const builtinSel=(canChangeRole(u)&&!m.custom_role)?`<select onchange="staffSetRole('${u}',this.value)" class="bg-[#1e1f22] text-[10px] text-white rounded px-1.5 py-0.5 mt-1">${assignableRoles().map(r=>`<option value="${r}" ${r===m.role?'selected':''}>${r}</option>`).join('')}</select>`:'';
       if(def&&!self){
         if(until(p,'banned_until')){if(canBan(m.role))acts.push(b('Unban',`punish('${u}','ban',0)`))}else if(canBan(m.role))acts.push(b('Ban',`askBan('${u}')`));
         if(until(p,'muted_until')){if(canMute(m.role))acts.push(b('Unmute',`punish('${u}','mute',0)`))}else if(canMute(m.role))acts.push(b('Mute',`askMute('${u}')`));
       }
       const tagline=(until(p,'banned_until')?'🚫 banned':'')+(until(p,'banned_until')&&until(p,'muted_until')?' · ':'')+(until(p,'muted_until')?'🔇 muted':'');
       const onlineNow=u===me.id||online.has(u);
-      return `<div data-uid="${u}" class="py-1.5 px-1.5 -mx-1.5 rounded-md hover:bg-[#35373c] transition-colors"><div class="flex items-center gap-2.5"><span onclick="showProfile('${u}')" class="relative flex-shrink-0 cursor-pointer">${av(p,9)}<span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#2b2d31]" style="background:${stColor(u)}"></span></span><div class="min-w-0 flex-1 cursor-pointer" onclick="showProfile('${u}')"><div class="flex items-center justify-between gap-2"><span class="text-sm font-semibold truncate" style="color:${col(p)}">${esc(nm(m))}</span>${utag(p)?`<span class="flex-shrink-0">${utag(p)}</span>`:''}</div>${p.bio?`<div class="text-[11px] text-[#949ba4] truncate">${esc(p.bio)}</div>`:''}${csLine(u)}${tagline?`<div class="text-[10px] text-[#f23f43] truncate">${tagline}</div>`:''}</div></div>${(builtinSel||acts.length)?`<div class="flex items-center gap-2 mt-1 pl-[2.75rem] text-[10px] text-[#949ba4]">${builtinSel}${acts.join('')}</div>`:''}</div>`
+      return `<div data-uid="${u}" class="py-1.5 px-1.5 -mx-1.5 rounded-md hover:bg-[#35373c] transition-colors"><div class="flex items-center gap-2.5"><span onclick="showProfile('${u}')" class="relative flex-shrink-0 cursor-pointer">${av(p,9)}<span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#2b2d31]" style="background:${stColor(u)}"></span></span><div class="min-w-0 flex-1 cursor-pointer" onclick="showProfile('${u}')"><div class="flex items-center justify-between gap-2"><span class="text-sm font-semibold truncate" style="color:${col(p)}">${esc(nm(m))}</span>${utag(p)?`<span class="flex-shrink-0">${utag(p)}</span>`:''}</div>${p.bio?`<div class="text-[11px] text-[#949ba4] truncate">${esc(p.bio)}</div>`:''}${csLine(u)}${tagline?`<div class="text-[10px] text-[#f23f43] truncate">${tagline}</div>`:''}</div></div>${acts.length?`<div class="flex items-center gap-2 mt-1 pl-[2.75rem] text-[10px] text-[#949ba4]">${acts.join('')}</div>`:''}</div>`
     }).join('');
     const onl=g.items.filter(m=>m.user_id===me.id||online.has(m.user_id)).length;
     return `<div class="${closed?'mb-2':'mb-5'}"><button onclick="toggleRoleGroup('${g.key}')" class="w-full flex items-center gap-2 px-1.5 ${closed?'':'mb-2'} text-left hover:opacity-80"><span class="inline-block w-3 text-center text-[10px] text-[#949ba4]">${closed?'▸':'▾'}</span><span class="text-[9px] font-black uppercase px-1.5 py-0.5 rounded text-white" style="background:${g.color||'#4e5058'}">${esc(g.label)}</span><span class="text-[11px] text-[#80848e]">— ${g.items.length}${closed&&onl?` · <span class="text-[#23a55a]">${onl} online</span>`:''}</span></button>${closed?'':`<div class="space-y-0.5">${rows}</div>`}</div>`;
@@ -236,7 +235,6 @@ function toggleRoleGroup(k){
   try{localStorage.setItem(roleColKey(),JSON.stringify(c))}catch(e){}
   drawMembers();
 }
-async function setRole(uid,role){return staffSetRole(uid,role)}
 async function kick(uid){if(!(await askConfirm('Kick this member?')))return;const {error}=await sb.from('server_members').delete().eq('server_id',srvId).eq('user_id',uid);if(error)alert(error.message);openServer(srvId)}
 async function delMsg(id){const {error}=await sb.from(tblOf(msgCache[id])).delete().eq('id',id);if(error)return alert(error.message);const e=$('m_'+id);if(e)e.remove()}
 function drawChannels(){
@@ -608,7 +606,6 @@ const CMD_INFO=[
 ];
 const OWNER_ONLY_CMDS=new Set(['beanbottest','beanbotluck','beanbotpoor','ecopurge']);
 const CMDS=CMD_INFO.map(x=>x[0]),ROLES=['manager','admin','goodgirl','mod','verified','member'];
-function roleSel(m,u,self){if(self||!canManage(m.role))return '';const o=ROLES.filter(r=>rank(r)<rank(myRole())).map(r=>`<option ${r===m.role?'selected':''}>${r}</option>`).join('');return `<select onchange="setRole('${u}',this.value)" class="mt-1 bg-[#1e1f22] text-[10px] text-[#949ba4] rounded px-1">${o}</select>`}
 const BOLDMARK='[[big]]';
 function plainText(c){
   c=String(c||'');
@@ -617,7 +614,8 @@ function plainText(c){
   if(c.startsWith(BOLDMARK))return c.slice(BOLDMARK.length).trim();
   return c;
 }
-const BOT_NAMES=['beanbot','missbeanbot'];
+// accounts that get BeanBot's look: BOT badge, embed cards, no edit button. Add your own bot accounts' usernames here.
+const BOT_NAMES=['beanbot'];
 const isBot=p=>!!p&&BOT_NAMES.includes(p.username);
 const BOTBADGE='<span class="text-[9px] font-black uppercase text-white px-1.5 rounded bg-[#5865f2]">BOT</span>';
 
@@ -767,11 +765,6 @@ async function refreshMembersOnly(){
   const {data}=await sb.from('server_members').select('*').eq('server_id',srvId);
   members=data||[];roles={};members.forEach(x=>roles[x.user_id]=x.role);drawMembers();
 }
-async function profSetRole(uid,newrole){
-  const {error}=await sb.rpc('set_builtin_role',{sid:srvId,uid,newrole});
-  if(error)alert(error.message);
-  await refreshMembersOnly();showProfile(uid);
-}
 async function profGiveRole(uid,rid){
   const {error}=await sb.rpc('give_role',{sid:srvId,uid,rid});
   if(error)alert(error.message);
@@ -808,7 +801,7 @@ function showProfile(uid){
   let roleHtml='';
   if(mem&&defRole==='owner'&&mem.role!=='owner'){
     const chips=croles.map(r=>`<button onclick="profGiveRole('${uid}','${r.id}')" class="text-[11px] font-bold px-2.5 py-1 rounded-full text-white ${mem.custom_role===r.id?'ring-2 ring-white':'opacity-70 hover:opacity-100'}" style="background:${esc(r.color)}">${esc(r.name)}</button>`).join('');
-    roleHtml=`<div class="mt-3 rounded-xl bg-black/20 p-4"><div class="text-[11px] font-bold uppercase tracking-wide text-[#949ba4] mb-2">Roles</div><div class="flex items-center gap-2 text-sm text-[#b5bac1] mb-3"><span>Tier</span><select onchange="profSetRole('${uid}',this.value)" class="bg-[#1e1f22] text-white rounded-lg px-2 py-1 text-sm outline-none">${['member','verified','mod','admin','manager','coowner','alter'].map(x=>`<option value="${x}" ${x===mem.role?'selected':''}>${x}</option>`).join('')}</select></div><div class="flex flex-wrap gap-1.5">${chips||'<span class="text-xs text-[#80848e]">No custom roles yet. Make one with /newrole.</span>'}${mem.custom_role?`<button onclick="profGiveRole('${uid}',null)" class="text-[11px] font-semibold px-2.5 py-1 rounded-full text-[#b5bac1] hover:text-white" style="background:rgba(255,255,255,.08)">Remove role</button>`:''}</div></div>`;
+    roleHtml=`<div class="mt-3 rounded-xl bg-black/20 p-4"><div class="text-[11px] font-bold uppercase tracking-wide text-[#949ba4] mb-2">Roles</div><div class="flex flex-wrap gap-1.5">${chips||'<span class="text-xs text-[#80848e]">No roles yet. Create one in Server Settings → Roles.</span>'}${mem.custom_role?`<button onclick="profGiveRole('${uid}',null)" class="text-[11px] font-semibold px-2.5 py-1 rounded-full text-[#b5bac1] hover:text-white" style="background:rgba(255,255,255,.08)">Remove role</button>`:''}</div></div>`;
   }
   $('vpc').innerHTML=`<div class="h-28 pcard-top" style="${bgStyle}"></div>
   <div class="px-5 -mt-10 relative"><div class="relative inline-block rounded-full" style="border:5px solid #2a2c30">${av(p,20)}${dot}</div></div>
@@ -2006,7 +1999,6 @@ const RESET_MIN_RANK=8; // 8 = owner only. Must match RESET_MIN_RANK in the acco
 const USERNAME_COOLDOWN_DAYS=7;
 const canChangeRole=u=>!!srvId&&u!==me.id&&rank(myRole())>=4&&rank(roles[u])<rank(myRole())&&roles[u]!=='owner';
 const canResetPw=u=>u!==me.id&&rank(myRole())>=RESET_MIN_RANK&&rank(roles[u])<rank(myRole());
-const assignableRoles=()=>['alter','coowner','manager','admin','goodgirl','mod','verified','member'].filter(r=>rank(r)<rank(myRole()));
 async function toolsCall(body){
   const {data,error}=await sb.functions.invoke('account-tools',{body});
   if(error){let m=error.message;try{const j=await error.context.json();if(j&&j.error)m=j.error}catch(e){}throw new Error(m)}
@@ -2022,17 +2014,15 @@ function overlay(html){
 }
 function closeOverlay(){const d=$('bc_overlay');if(d)d.remove()}
 
-async function staffSetRole(uid,newrole){
-  const {error}=await sb.rpc('staff_set_role',{sid:String(srvId),uid,newrole});
-  if(error)alert(error.message);
-  closeOverlay();await openServer(srvId);
-}
 function openRoleDialog(uid){
   if(!canChangeRole(uid))return;
-  const p=profiles[uid]||{username:'?'},cur=roles[uid];
-  const btns=assignableRoles().map(r=>`<button onclick="staffSetRole('${uid}','${r}')" class="w-full text-left px-3 py-2 rounded-lg text-sm ${r===cur?'bg-[#5865f2] text-white font-bold':'bg-[#1e1f22] text-[#dbdee1] hover:bg-[#35373c]'}">${r}${r===cur?' (current)':''}</button>`).join('');
-  overlay(`<div class="flex justify-between items-center mb-3"><h2 class="font-bold text-white">Change role: ${esc(dn(p))}</h2><button onclick="closeOverlay()" class="text-[#949ba4] hover:text-white">✕</button></div><div class="space-y-1.5">${btns}</div><div class="text-[11px] text-[#949ba4] mt-3">You can only give roles that are below your own.</div>`);
+  const p=profiles[uid]||{username:'?'},m=members.find(x=>x.user_id===uid)||{},mine=rank(myRole());
+  const list=croles.filter(r=>rank(r.base)<mine).sort((x,y)=>(y.position||0)-(x.position||0));
+  const btns=list.map(r=>`<button onclick="giveRoleTo('${uid}','${r.id}')" class="w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg text-sm ${r.id===m.custom_role?'bg-[#5865f2] text-white font-bold':'bg-[#1e1f22] text-[#dbdee1] hover:bg-[#35373c]'}"><span class="w-3 h-3 rounded-full flex-shrink-0" style="background:${esc(r.color)}"></span>${esc(r.name)}${r.id===m.custom_role?' (current)':''}</button>`).join('')
+    +(m.custom_role?`<button onclick="giveRoleTo('${uid}',null)" class="w-full text-left px-3 py-2 rounded-lg text-sm text-[#f23f43] bg-[#1e1f22] hover:bg-[#35373c]">Remove role</button>`:'');
+  overlay(`<div class="flex justify-between items-center mb-3"><h2 class="font-bold text-white">Roles: ${esc(dn(p))}</h2><button onclick="closeOverlay()" class="text-[#949ba4] hover:text-white">✕</button></div><div class="space-y-1.5">${btns||'<div class="text-sm text-[#949ba4]">No roles to give yet. Create them in Server Settings → Roles.</div>'}</div>`);
 }
+async function giveRoleTo(uid,rid){const {error}=await sb.rpc('give_role',{sid:srvId,uid,rid});if(error)alert(error.message);closeOverlay();await openServer(srvId)}
 
 function accInit(){
   ['acc_un','acc_old','acc_new'].forEach(i=>{const e=$(i);if(e)e.value=''});
