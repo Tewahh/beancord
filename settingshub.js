@@ -12,7 +12,7 @@ function shPages(){
   const roleOk=defRole==='owner'||myPerm('manage_roles');
   return [
     {g:(servers.find(x=>x.id===srvId)||{}).name||'Server',items:[{k:'overview',ic:'⚙',t:'Overview',ok:true}]},
-    {g:'People',items:[{k:'roles',ic:'🛡',t:'Roles',ok:roleOk},{k:'audit',ic:'📋',t:'Audit Log',ok:staff||myPerm('view_audit_log')}]},
+    {g:'People',items:[{k:'roles',ic:'🛡',t:'Roles',ok:roleOk},{k:'tags',ic:'🏷',t:'Tags',ok:defRole==='owner'},{k:'audit',ic:'📋',t:'Audit Log',ok:staff||myPerm('view_audit_log')}]},
     {g:'Channels',items:[{k:'channels',ic:'#',t:'Channels',ok:staff||myPerm('manage_channels')}]},
     {g:'Moderation',items:[{k:'rules',ic:'📜',t:'Welcome & Rules',ok:staff},{k:'automod',ic:'🤖',t:'Auto-mod',ok:staff&&def},{k:'words',ic:'🚫',t:'Blocked Words',ok:staff&&def}]},
     {g:'Integrations',items:[{k:'hooks',ic:'🔗',t:'Webhooks',ok:staff}]},
@@ -40,7 +40,7 @@ function shDraw(){
   const cur=all.find(i=>i.k===shPage);
   $('sx_t').textContent=cur.t;
   const b=$('sx_b');b.className='';b.onclick=null;delete b.dataset.editing;
-  ({overview:shOverview,roles:shRoles,audit:shAudit,channels:shChannels,rules:tvRules,automod:tvAutomod,words:tvWords,hooks:tvHooks})[shPage](b);
+  ({overview:shOverview,roles:shRoles,tags:shTags,audit:shAudit,channels:shChannels,rules:tvRules,automod:tvAutomod,words:tvWords,hooks:tvHooks})[shPage](b);
   const m=$('sx').querySelector('.sx-main');if(m)m.scrollTop=0;
 }
 
@@ -75,6 +75,22 @@ function shOverview(b){
 }
 
 // ---------- Roles ----------
+// the built-in staff ranks, listed on the Roles page next to the custom roles (owner and the top rank are shown but locked)
+const SH_BUILTIN=[
+  {k:'owner',name:'Owner',color:'#8b5a2b',d:'The server owner. Can do everything and cannot be changed.',assign:false},
+  {k:'alter',name:'Alter',color:'#d946ef',d:'Top staff rank. Can manage roles and delete accounts.',assign:false},
+  {k:'coowner',name:'Co-owner',color:'#f59e0b',d:'Acts on everyone but the owner.',assign:true},
+  {k:'manager',name:'Manager',color:'#a3e635',d:'Acts on admins and below.',assign:true},
+  {k:'admin',name:'Admin',color:'#dc2626',d:'Bans, mutes and manages channels. Acts on mods and below.',assign:true},
+  {k:'mod',name:'Mod',color:'#16a34a',d:'Mutes, warns and deletes messages.',assign:true},
+  {k:'verified',name:'Verified',color:'#0ea5e9',d:'Trusted member. Above regular members.',assign:true},
+];
+async function staffSetRole(uid,newrole){
+  const {error}=await sb.rpc('staff_set_role',{sid:String(srvId),uid,newrole});
+  if(error)alert(error.message);
+  if(typeof closeOverlay==='function')closeOverlay();
+  await openServer(srvId);
+}
 function shPermChips(r){
   const p=r.perms||{};if(p.administrator)return '<span class="sx-chip adm">Administrator</span>';
   const l=PERMS.filter(([k])=>p[k]).map(x=>x[1]);
@@ -92,7 +108,10 @@ function shRoles(b){
       <span class="sx-dot" style="background:${esc(r.color)}"></span>
       <div class="sx-grow"><div class="sx-rname" style="color:${esc(r.color)}">${esc(r.name)}</div><div class="sx-sub">${esc(r.base)} tier · ${n} member${n===1?'':'s'}</div><div class="sx-chips">${shPermChips(r)}</div></div>
       <div class="sx-acts">${shBtn('Members',`shRoleMembersOpen('${r.id}')`)}${shBtn('Edit',`shRoleEdit0('${r.id}')`)}${shBtn('Delete',`removeRole('${r.id}')`,'red')}</div></div>`;
-  }).join(''):shEmpty('No custom roles yet.<br>Press <b>Create Role</b> to make one.'));
+  }).join(''):shEmpty('No custom roles yet.<br>Press <b>Create Role</b> to make one.'))+
+  `<div class="sx-sec">Built-in ranks</div>`+SH_BUILTIN.map(x=>{
+    const n=members.filter(m=>m.role===x.k).length,can=x.assign&&rank(x.k)<rank(myRole());
+    return `<div class="sx-card"><span class="sx-dot" style="background:${x.color}"></span><div class="sx-grow"><div class="sx-rname" style="color:${x.color}">${x.name}<span class="sx-lock">built-in</span></div><div class="sx-sub">${x.d} · ${n} member${n===1?'':'s'}</div></div><div class="sx-acts">${x.assign?shBtn(can?'Members':'View',`shRoleMembersOpen('b:${x.k}')`):''}</div></div>`}).join('');
 }
 function shRoleNew(tpl){rfEditing='';shRoleFor=null;shDraw();if(tpl==='trialmod')shRoleTemplate()}
 function shRoleEdit0(id){rfEditing=id;shRoleFor=null;shDraw()}
@@ -149,16 +168,20 @@ async function moveRole(rid,delta){const {error}=await sb.rpc('move_role',{rid,d
 // who has this role: search, add or remove
 function shRoleMembersOpen(id){shRoleFor=id;rfEditing=null;shDraw()}
 function shRoleMembers(b){
-  const r=croles.find(x=>x.id===shRoleFor);if(!r){shRoleFor=null;return shRoles(b)}
+  const bi=String(shRoleFor).startsWith('b:')?SH_BUILTIN.find(x=>x.k===shRoleFor.slice(2)):null;
+  const r=bi?{id:bi.k,name:bi.name,color:bi.color}:croles.find(x=>x.id===shRoleFor);if(!r){shRoleFor=null;return shRoles(b)}
+  const mineRank=rank(myRole()),canGive=!bi||rank(bi.k)<mineRank;
+  const has=m=>bi?m.role===bi.k:m.custom_role===r.id;
   b.innerHTML=`<button class="sx-back" onclick="shGo('roles')">‹ Back to roles</button>
-  <div class="sx-card"><span class="sx-dot" style="background:${esc(r.color)}"></span><div class="sx-grow"><div class="sx-rname" style="color:${esc(r.color)}">${esc(r.name)}</div><div class="sx-sub">Add or remove people. A person can hold one custom role, so adding replaces their old one.</div></div></div>
+  <div class="sx-card"><span class="sx-dot" style="background:${esc(r.color)}"></span><div class="sx-grow"><div class="sx-rname" style="color:${esc(r.color)}">${esc(r.name)}</div><div class="sx-sub">${bi?(canGive?'Add or remove people. Removing sets them back to Member.':'You can see who has this rank, but only someone ranked above it can change it.'):'Add or remove people. A person can hold one custom role, so adding replaces their old one.'}</div></div></div>
   <input id="rm_q" class="sx-in" placeholder="Search members" autocomplete="off" style="margin:12px 0"><div id="rm_l"></div>`;
   const draw=()=>{
     const q=$('rm_q').value.trim().toLowerCase();
     const rows=members.map(m=>({m,p:profiles[m.user_id]})).filter(x=>x.p&&(!q||x.p.username.includes(q)||(x.p.nickname||'').toLowerCase().includes(q)))
-      .sort((a,c)=>(c.m.custom_role===r.id)-(a.m.custom_role===r.id)||dn(a.p).localeCompare(dn(c.p))).slice(0,60);
-    $('rm_l').innerHTML=rows.length?rows.map(({m,p})=>{const has=m.custom_role===r.id;
-      return `<div class="sx-row"><span class="sx-av">${av(p,6)}</span><div class="sx-grow"><div class="sx-nm">${esc(dn(p))}</div><div class="sx-sub">@${esc(p.username)}</div></div>${has?shBtn('Remove',`shRoleSet('${m.user_id}',null)`,'red'):shBtn('Add',`shRoleSet('${m.user_id}','${r.id}')`,'blue')}</div>`}).join(''):shEmpty('No one matches.');
+      .sort((a,c)=>has(c.m)-has(a.m)||dn(a.p).localeCompare(dn(c.p))).slice(0,60);
+    $('rm_l').innerHTML=rows.length?rows.map(({m,p})=>{const h=has(m),ok=canGive&&(!bi||canChangeRole(m.user_id));
+      const act=!ok?'':h?shBtn('Remove',bi?`staffSetRole('${m.user_id}','member')`:`shRoleSet('${m.user_id}',null)`,'red'):shBtn('Add',bi?`staffSetRole('${m.user_id}','${bi.k}')`:`shRoleSet('${m.user_id}','${r.id}')`,'blue');
+      return `<div class="sx-row"><span class="sx-av">${av(p,6)}</span><div class="sx-grow"><div class="sx-nm">${esc(dn(p))}</div><div class="sx-sub">@${esc(p.username)}</div></div>${act}</div>`}).join(''):shEmpty('No one matches.');
   };
   $('rm_q').addEventListener('input',draw);draw();
 }
@@ -185,3 +208,14 @@ function shChannels(b){
     const ic=c.is_voice?'🔊':c.is_forum?'💬':'#';
     return `<div class="sx-card"><div class="sx-reorder"><button onclick="moveChannel('${c.id}',-1)">▲</button><button onclick="moveChannel('${c.id}',1)">▼</button></div><span class="sx-chic">${ic}</span><div class="sx-grow"><div class="sx-nm">${esc(c.name)}</div>${c.topic?`<div class="sx-sub">${esc(c.topic)}</div>`:''}</div><div class="sx-acts">${shBtn('Edit',`openChannelForm('${c.id}')`)}${shBtn('Delete',`deleteChannel('${c.id}')`,'red')}</div></div>`}).join('')).join(''):shEmpty('No channels yet.'));
 }
+
+// ---------- Tags: made here, bought and equipped in the shop ----------
+async function shTags(b){
+  b.innerHTML='<div class="sx-sub">Loading…</div>';
+  await loadShopTags();
+  const list=Object.values(shopTags).sort((x,y)=>x.price-y.price);
+  b.innerHTML=`<div class="sx-bar"><div class="sx-sub">Tags are the little labels people buy with beans and show next to their name. Create and edit them here. Members still buy and equip them in the 🛍 shop.</div><div class="sx-bar-r">${shBtn('Create Tag','newTag()','blue')}</div></div>`+
+  (list.length?list.map(t=>`<div class="sx-card"><div class="sx-grow"><div style="margin-bottom:4px">${chip(t)}</div><div class="sx-sub">${esc(t.description||'No description')} · 🫘 ${t.price}${t.min_rank>1?' · '+(t.min_rank>=3?'mods':'verified')+' and up':''}</div></div><div class="sx-acts">${shBtn('Edit',`editTag('${t.id}')`)}${shBtn('Delete',`delTag('${t.id}')`,'red')}</div></div>`).join(''):shEmpty('No tags yet.<br>Press <b>Create Tag</b> to make one.'));
+}
+// saving or deleting a tag refreshes this page too
+{const _ds=drawShop;drawShop=function(){_ds.apply(this,arguments);if($('sx')&&shPage==='tags')shDraw()}}

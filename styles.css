@@ -512,3 +512,4 @@ html body #ctx{max-height:min(80vh,calc(100dvh - 16px));overflow-y:auto}
   #sx .sx-sw{grid-template-columns:repeat(5,1fr)}
   #sx .sx-foot{bottom:10px}
 }
+#sx .sx-lock{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#949ba4;background:#1e1f22;border-radius:3px;padding:1px 6px;margin-left:8px;vertical-align:middle}
