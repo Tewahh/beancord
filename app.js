@@ -200,7 +200,7 @@ async function newServer(){
   await loadServers();openServer(servers[servers.length-1].id);
 }
 async function openServer(id){
-  srvId=id;delete unreadSrv[id];delete mentSrv[id];await loadProfiles(120000);await loadServers();
+  srvId=id;delete unreadSrv[id];delete mentSrv[id];await loadProfiles(600000);await loadServers();
   const s=servers.find(x=>x.id===id);
   const [c,m]=await Promise.all([sb.from('channels').select('*').eq('server_id',id).order('position',{nullsFirst:false}).order('created_at'),sb.from('server_members').select('*').eq('server_id',id)]);
   channels=c.data||[];channels.forEach(x=>chanSrv[x.id]=id);members=m.data||[];roles={};members.forEach(x=>roles[x.user_id]=x.role);if((servers.find(x=>x.id===id)||{}).is_default){defRole=roles[me.id];const nb=$('newsrvbtn');if(nb)nb.classList.toggle('hidden',defRole!=='owner')}
@@ -286,7 +286,7 @@ async function openChannel(id){
   draw(data||[],since);
 }
 async function showDMs(){
-  srvId=null;members=[];roles={};$('mem').classList.add('hidden');await loadProfiles(120000);await loadFriends();await loadGroups();await loadServers();cur={};$('sh').innerHTML='<span class="truncate">Direct Messages</span><span class="flex items-center gap-2 flex-shrink-0"><button onclick="openWeb()" title="Beanchat — search the web" class="text-base text-[#949ba4] hover:text-white">🫘</button></span>';$('chtitle').textContent='Pick someone to message';$('msgs').innerHTML='';$('pinbtn').classList.add('hidden');$('searchbtn').classList.add('hidden');$('searchbar').classList.add('hidden');$('callbtn').classList.add('hidden');$('groupcallbtn').classList.add('hidden');$('groupsettingsbtn').classList.add('hidden');subscribeTyping();
+  srvId=null;members=[];roles={};$('mem').classList.add('hidden');await loadProfiles(600000);await loadFriends();await loadGroups();await loadServers();cur={};$('sh').innerHTML='<span class="truncate">Direct Messages</span><span class="flex items-center gap-2 flex-shrink-0"><button onclick="openWeb()" title="Beanchat — search the web" class="text-base text-[#949ba4] hover:text-white">🫘</button></span>';$('chtitle').textContent='Pick someone to message';$('msgs').innerHTML='';$('pinbtn').classList.add('hidden');$('searchbtn').classList.add('hidden');$('searchbar').classList.add('hidden');$('callbtn').classList.add('hidden');$('groupcallbtn').classList.add('hidden');$('groupsettingsbtn').classList.add('hidden');subscribeTyping();
   drawPeople();
 }
 function drawPeople(){
@@ -413,7 +413,7 @@ function buzz(vol){
 }
 setInterval(()=>{try{if(callState==='ringing-in')buzz(0.5);else if(callState==='calling')buzz(0.22)}catch(e){}},1600);
 // belt and braces: notice a ban or mute within 2 minutes even if realtime missed it
-setInterval(async()=>{if(!me||$('app').classList.contains('hidden'))return;try{const {data:sm}=await sb.from('server_members').select('server_id').eq('user_id',me.id);if(sm){const ids=sm.map(x=>x.server_id).join(',');if(window._memIds&&window._memIds.split(',').some(i=>i&&!ids.split(',').includes(i)))return location.reload();window._memIds=ids}const {data}=await sb.from('profiles').select('banned_until,muted_until').eq('id',me.id).single();if(!data)return;const wasB=until(me,'banned_until'),wasM=until(me,'muted_until');me={...me,...data};profiles[me.id]=me;if((until(me,'banned_until')&&!wasB)||(until(me,'muted_until')&&!wasM))location.reload()}catch(e){}},120000);
+setInterval(async()=>{if(!me||$('app').classList.contains('hidden'))return;try{const {data:sm}=await sb.from('server_members').select('server_id').eq('user_id',me.id);if(sm){const ids=sm.map(x=>x.server_id).join(',');if(window._memIds&&window._memIds.split(',').some(i=>i&&!ids.split(',').includes(i)))return location.reload();window._memIds=ids}const {data}=await sb.from('profiles').select('banned_until,muted_until').eq('id',me.id).single();if(!data)return;const wasB=until(me,'banned_until'),wasM=until(me,'muted_until');me={...me,...data};profiles[me.id]=me;if((until(me,'banned_until')&&!wasB)||(until(me,'muted_until')&&!wasM))location.reload()}catch(e){}},600000);
 function listen(){
   rt=sb.channel('live')
    .on('postgres_changes',{event:'INSERT',schema:'public',table:'app_signals'},p=>{if(p.new&&p.new.kind==='reload'&&Date.now()-new Date(p.new.created_at)<120000)setTimeout(()=>location.reload(),400+Math.random()*2500)})
@@ -424,7 +424,7 @@ function listen(){
      if((nowB&&!wasB)||(nowM&&!wasM))location.reload();
    })
    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},async p=>{
-     if(!profiles[p.new.sender_id])await loadProfiles(20000);
+     if(!profiles[p.new.sender_id])await loadProfiles(60000);
      if(cur.type==='ch'&&cur.id===p.new.channel_id){add(p.new);if(mentionsMe(p.new)&&!isMutedCh(p.new.channel_id))ping()}else if(p.new.sender_id!==me.id&&!isMutedCh(p.new.channel_id)){const cid=p.new.channel_id,sv=chanSrv[cid];unreadCh[cid]=1;if(sv)unreadSrv[sv]=(unreadSrv[sv]||0)+1;
        if(mentionsMe(p.new)){ment[cid]=(ment[cid]||0)+1;if(sv)mentSrv[sv]=(mentSrv[sv]||0)+1;const ch=channels.find(x=>x.id===cid);toast((profiles[p.new.sender_id]||{username:'Someone'}).username+' mentioned you'+(ch?' in #'+ch.name:''));ping()}
        if(srvId)drawChannels();drawServerNav()}})
@@ -437,12 +437,12 @@ function listen(){
    .on('postgres_changes',{event:'*',schema:'public',table:'friendships'},async()=>{await loadFriends();if(!srvId)drawPeople()})
    .on('postgres_changes',{event:'INSERT',schema:'public',table:'dm_messages'},async p=>{
      const m=p.new,peer=m.sender_id===me.id?m.recipient_id:m.sender_id;
-     if(!profiles[peer])await loadProfiles(20000);
+     if(!profiles[peer])await loadProfiles(60000);
      if(cur.type==='dm'&&cur.id===peer){add(m);if(m.sender_id!==me.id){if(_watching())markRead(peer);else ping()}}
      else if(m.sender_id!==me.id){unread[peer]=(unread[peer]||0)+1;ping();updateTot();if(!srvId)drawPeople()}})
    .on('postgres_changes',{event:'INSERT',schema:'public',table:'group_dm_messages'},async p=>{
      const m=p.new;
-     if(!profiles[m.sender_id])await loadProfiles(20000);
+     if(!profiles[m.sender_id])await loadProfiles(60000);
      if(cur.type==='group'&&cur.id===m.group_id){add(m);if(m.sender_id!==me.id){if(_watching())markRead(m.group_id);else ping()}}
      else if(m.sender_id!==me.id){unread[m.group_id]=(unread[m.group_id]||0)+1;ping();updateTot();if(!srvId)drawPeople()}})
    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'dm_messages'},p=>dmUpd(p.new))
@@ -1713,7 +1713,7 @@ function insertEmoji(em){hideCtx();const el=$('i');el.value+=em;el.focus()}
 // ===== last seen =====
 function ago(ts){const sec=Math.floor((Date.now()-new Date(ts))/1000);if(sec<60)return 'just now';if(sec<3600)return Math.floor(sec/60)+'m ago';if(sec<86400)return Math.floor(sec/3600)+'h ago';return Math.floor(sec/86400)+'d ago'}
 async function touchSeen(){try{await sb.rpc('touch_last_seen')}catch(e){}}
-setInterval(()=>{if(!document.hidden&&me)touchSeen()},60000);
+setInterval(()=>{if(!document.hidden&&me)touchSeen()},300000);
 
 
 // ===== custom roles: the manager lives in settingshub.js (Server Settings > Roles) =====
@@ -1783,7 +1783,7 @@ async function pollVote(id,opt){
   if(error)return alert(error.message);
   pollTick();
 }
-setInterval(()=>{if(!document.hidden)pollTick()},5000);
+setInterval(()=>{if(!document.hidden)pollTick()},15000);
 
 // ===== offline notifications (Web Push) =====
 const pushOK=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
