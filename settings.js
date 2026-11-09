@@ -91,7 +91,7 @@ function stLook(el){
     ${stRow('Chat font size',`<span id="st_fsv">${prefs_.font}px</span>`,`<input id="st_font" type="range" min="12" max="20" step="1" value="${prefs_.font}" class="w-40">`)}
     ${stRow('Link previews','Show a small card under links. Turning this off also stops your browser asking the link-preview service.',stSwitch('linkPrev',prefs_.linkPrev))}
    </div>
-   ${stSec('Preview')}<div class="bg-[#313338] border border-[#3f4147] rounded-xl p-4"><div class="flex gap-3">${av(me,9)}<div><span class="font-bold text-sm" style="color:${col(me)}">${esc(dn(me))}</span> <span class="text-[10px] text-[#949ba4]">Today</span><p class="text-sm" style="font-size:var(--bc-chat,14px)!important">This is how your messages will look. 🫘</p></div></div></div>`;
+   ${stSec('Preview')}<div class="bg-[#313338] border border-[#3f4147] rounded-xl p-4"><div class="flex gap-3">${av(me,9)}<div><span class="font-bold text-sm" style="${nameCss(me)}">${esc(dn(me))}</span> <span class="text-[10px] text-[#949ba4]">Today</span><p class="text-sm" style="font-size:var(--bc-chat,14px)!important">This is how your messages will look. 🫘</p></div></div></div>`;
   $('st_mode').value=prefs_.mode;$('st_dens').value=prefs_.compact?'1':'0';$('st_rr').value=prefs_.rr===false?'0':'1';
   $('st_mode').onchange=e=>setPref('mode',e.target.value);
   $('st_dens').onchange=e=>setPref('compact',e.target.value==='1');

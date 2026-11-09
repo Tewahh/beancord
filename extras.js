@@ -133,7 +133,7 @@ function whereLabel(kind,m){
 }
 function msgRowHtml(kind,m,extra){
   const p=profiles[m.sender_id]||{username:'?'};
-  return `<div class="bg-[#1e1f22] rounded-lg px-3 py-2"><div class="flex items-center gap-2 text-xs"><b style="color:${col(p)}">${esc(dn(p))}</b><span class="text-[#949ba4] truncate">${esc(whereLabel(kind,m))}</span><span class="text-[#80848e] ml-auto flex-shrink-0">${new Date(m.created_at).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</span></div><div class="text-sm text-[#dbdee1] mt-1 break-words">${esc(plainText(m.content).slice(0,300))||'<i class="text-[#949ba4]">attachment</i>'}</div><div class="flex gap-3 mt-1.5 text-xs"><button data-jump="${kind}|${esc(msgCtx(m))}|${esc(m.id)}" class="text-[#5865f2] hover:underline">Jump to message</button>${extra||''}</div></div>`;
+  return `<div class="bg-[#1e1f22] rounded-lg px-3 py-2"><div class="flex items-center gap-2 text-xs"><b style="${nameCss(p)}">${esc(dn(p))}</b><span class="text-[#949ba4] truncate">${esc(whereLabel(kind,m))}</span><span class="text-[#80848e] ml-auto flex-shrink-0">${new Date(m.created_at).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</span></div><div class="text-sm text-[#dbdee1] mt-1 break-words">${esc(plainText(m.content).slice(0,300))||'<i class="text-[#949ba4]">attachment</i>'}</div><div class="flex gap-3 mt-1.5 text-xs"><button data-jump="${kind}|${esc(msgCtx(m))}|${esc(m.id)}" class="text-[#5865f2] hover:underline">Jump to message</button>${extra||''}</div></div>`;
 }
 async function openSaved(){
   const body=sheet('Saved messages & reminders','<div class="text-xs text-[#949ba4]">Loading…</div>',true);
@@ -215,7 +215,7 @@ async function doSearch(){
   if(!data.every(m=>profiles[m.sender_id]))await loadProfiles(60000);
   box.innerHTML=data.length?data.map(m=>{
     const p=profiles[m.sender_id]||{username:'?'},c=multi?allChans.find(x=>x.id===m.channel_id):null;
-    return `<div data-jump="${kind}|${esc(msgCtx(m))}|${esc(m.id)}" class="p-2 rounded bg-[#2b2d31] cursor-pointer hover:bg-[#35373c]"><b style="color:${col(p)}">${esc(dn(p))}</b> ${c?`<span class="text-[10px] text-[#80848e]">#${esc(c.name)}</span> `:''}<span class="text-[10px] text-[#949ba4]">${new Date(m.created_at).toLocaleString()}</span><p>${esc(plainText(m.content)||(m.image_url?'🖼 image':m.file_url?'📄 file':''))}</p></div>`;
+    return `<div data-jump="${kind}|${esc(msgCtx(m))}|${esc(m.id)}" class="p-2 rounded bg-[#2b2d31] cursor-pointer hover:bg-[#35373c]"><b style="${nameCss(p)}">${esc(dn(p))}</b> ${c?`<span class="text-[10px] text-[#80848e]">#${esc(c.name)}</span> `:''}<span class="text-[10px] text-[#949ba4]">${new Date(m.created_at).toLocaleString()}</span><p>${esc(plainText(m.content)||(m.image_url?'🖼 image':m.file_url?'📄 file':''))}</p></div>`;
   }).join(''):'<p class="text-xs text-[#949ba4]">No matches.</p>';
   box.onclick=e=>{const j=e.target.closest('[data-jump]');if(j){const [k,c,i]=j.dataset.jump.split('|');jumpToMsg(k,c,i)}};
 }

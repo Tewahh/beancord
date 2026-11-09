@@ -156,7 +156,7 @@ function ensureThreadPanel(){
 }
 function thrRow(m){
   const p=profiles[m.sender_id]||{username:'unknown'},t=new Date(m.created_at).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-  return `<div id="tm_${m.id}" class="flex gap-2"><span onclick="showProfile('${m.sender_id}')" class="cursor-pointer flex-shrink-0">${av(p,9)}</span><div class="min-w-0"><span class="font-bold text-sm" style="color:${col(p)}">${esc(dn(p))}</span> <span class="text-[10px] text-[#949ba4]">${esc(t)}</span><p class="text-sm" data-t>${fmt(m)}</p></div></div>`;
+  return `<div id="tm_${m.id}" class="flex gap-2"><span onclick="showProfile('${m.sender_id}')" class="cursor-pointer flex-shrink-0">${av(p,9)}</span><div class="min-w-0"><span class="font-bold text-sm" style="${nameCss(p)}">${esc(dn(p))}</span> <span class="text-[10px] text-[#949ba4]">${esc(t)}</span><p class="text-sm" data-t>${fmt(m)}</p></div></div>`;
 }
 async function openThread(id){
   const m=msgCache[id];if(!m||!m.channel_id)return;hideCtx();ensureThreadPanel();thrRoot=id;
