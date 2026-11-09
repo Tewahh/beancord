@@ -513,3 +513,7 @@ html body #ctx{max-height:min(80vh,calc(100dvh - 16px));overflow-y:auto}
   #sx .sx-foot{bottom:10px}
 }
 #sx .sx-lock{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#949ba4;background:#1e1f22;border-radius:3px;padding:1px 6px;margin-left:8px;vertical-align:middle}
+
+/* hidden buttons stay hidden: the #ch button rule above forces display, which made DM-only buttons (call, voice, group settings) and the mobile-only members button show everywhere */
+html body #ch button.hidden{display:none}
+@media (min-width:768px){html body #ch #membtn{display:none}}
