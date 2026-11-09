@@ -194,7 +194,7 @@ async function forwardMsg(id){
   const it=[];
   Object.values(profiles).filter(p=>p.id!==me.id&&fr(p.id)&&fr(p.id).status==='accepted').forEach(p=>it.push({label:'@ '+dn(p),sub:'Direct message',t:'dm',id:p.id}));
   groups.forEach(g=>it.push({label:'👥 '+g.name,sub:'Group chat',t:'group',id:g.id}));
-  if(srvId)channels.filter(c=>!c.is_voice&&rank(myRole())>=(c.min_post_rank||1)).forEach(c=>it.push({label:'# '+c.name,sub:(servers.find(x=>x.id===srvId)||{}).name||'',t:'ch',id:c.id}));
+  if(srvId)channels.filter(c=>!c.is_voice&&canPostChan(c)).forEach(c=>it.push({label:'# '+c.name,sub:(servers.find(x=>x.id===srvId)||{}).name||'',t:'ch',id:c.id}));
   const to=await pickList('Forward to…',it,'Search people, groups, channels');if(!to)return;
   const from=dn(profiles[m.sender_id]||{username:'unknown'}),body=(m.content&&m.content!=='​')?m.content:'';
   const content='↪ Forwarded from '+from+(body?'\n'+body:'');

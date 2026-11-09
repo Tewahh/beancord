@@ -81,8 +81,7 @@ function md(s){
   return s.replace(/\u0001(\d+)\u0001/g,(_,i)=>st[i]);
 }
 const clean=u=>u.toLowerCase().replace(/[^a-z0-9_]/g,'');
-const RANK={owner:8,alter:7,coowner:6,manager:5,admin:4,goodgirl:4,mod:3,verified:2,member:1},BADGE={owner:'bg-[#8b5a2b]',coowner:'bg-amber-500 !text-black',alter:'bg-fuchsia-500',manager:'bg-lime-400 !text-black',admin:'bg-red-600',goodgirl:'bg-pink-500',mod:'bg-green-600',verified:'bg-sky-500',member:'bg-[#4e5058]'};
-const rank=r=>RANK[r]||1;
+const BADGE={owner:'bg-[#8b5a2b]',member:'bg-[#4e5058]'}; // every other title is a role with its own color (Server Settings > Roles)
 const dn=p=>(p&&p.nickname)||(p&&p.username)||'unknown';
 let friends=[];
 // only friendships that involve ME count (rows between other people must never show up as mine)
@@ -121,10 +120,24 @@ async function groupSettings(id){
 }
 let members=[],roles={},bans=[],newAvatar=null,newAvatarBlob=null,groups=[];
 const myRole=()=>roles[me.id]||'member';
-const isStaff=()=>rank(myRole())>=4;
-const canBan=t=>rank(myRole())>=4&&rank(myRole())>rank(t);
-const canMute=t=>rank(myRole())>=3&&rank(myRole())>rank(t);
-const canManage=t=>{const m=rank(myRole());return m>=4&&m>rank(t)};
+// ---- rank and powers come from ROLES (Server Settings > Roles); nothing is fixed in code ----
+// rank = where a person's role sits in the Roles list (higher = higher up). The owner is always on top, people with no role are at 0.
+const OWNER_RANK=1e6;
+const rankOf=u=>roles[u]==='owner'?OWNER_RANK:(cr[u]?Math.max(1,cr[u].position||0):0);
+const myRank=()=>rankOf(me.id);
+// "Administrator" covers every permission except these, which have to be ticked one by one (same list as bc_owner_level_perms() in the database)
+const OWNER_LEVEL_PERMS=['ban_ips','ban_devices','manage_nicknames','manage_automod','view_ips','manage_words','manage_shop'];
+const permIn=(role,c,k)=>role==='owner'||!!(c&&c.perms&&(c.perms[k]||(c.perms.administrator&&!OWNER_LEVEL_PERMS.includes(k))));
+const myPerm=k=>permIn(myRole(),cr[me.id],k);       // in the server that is open
+const defPerm=k=>permIn(defRole,defCr,k);            // in the main server
+const isStaff=()=>['manage_server','manage_roles','manage_channels','kick_members','ban_members'].some(myPerm);
+const canBan=u=>myPerm('ban_members')&&myRank()>rankOf(u);
+const canMute=u=>myPerm('timeout_members')&&myRank()>rankOf(u);
+const canManage=u=>myPerm('kick_members')&&myRank()>rankOf(u);
+// channel limits are roles too: "who can read / type" = this role and everyone above it
+const roleNeed=(rid,legacy)=>{if(rid){const r=croles.find(x=>x.id===rid);if(r)return Math.max(1,r.position||0)}return (legacy||1)>=7?OWNER_RANK:0};
+const canReadChan=c=>!!c&&myRank()>=roleNeed(c.min_read_role,c.min_read_rank);
+const canPostChan=c=>!!c&&canReadChan(c)&&myRank()>=roleNeed(c.min_post_role,c.min_post_rank);
 let me,profiles={},servers=[],channels=[],cur={},unread={},rt=null,srvId=null;
 
 
@@ -175,7 +188,7 @@ async function start(){
   try{const dv=await getDeviceIds();await sb.rpc('bc_register_device',{hw:dv.h,dev:dv.d})}catch(e){}
   try{const dv=await getDeviceIds();const {data:devBanned,error:devErr}=await sb.rpc('register_device',{h:dv.h,d:dv.d});if(!devErr&&devBanned===true)return kickDevice()}catch(e){}
   pushRebind();
-  await loadFriends();await loadBlocks();await loadShopTags();await loadChanMap();drawMeBox();
+  await loadFriends();await loadBlocks();await loadShopTags();await loadSiteLists();await loadChanMap();drawMeBox();
   await loadGroups();await loadUnread();await loadServers();await redeemInvite();loadCustomEmoji();const d=servers.find(x=>x.is_default);if(_inviteOpen)openServer(_inviteOpen);else if(d)openServer(d.id);else showDMs();listen();track();loadTurn();initExtras();
 }
 async function loadServers(){const {data}=await sb.from('servers').select('*').order('created_at');servers=data||[];drawServerNav()}
@@ -191,8 +204,9 @@ async function openServer(id){
   const s=servers.find(x=>x.id===id);
   const [c,m]=await Promise.all([sb.from('channels').select('*').eq('server_id',id).order('position',{nullsFirst:false}).order('created_at'),sb.from('server_members').select('*').eq('server_id',id)]);
   channels=c.data||[];channels.forEach(x=>chanSrv[x.id]=id);members=m.data||[];roles={};members.forEach(x=>roles[x.user_id]=x.role);if((servers.find(x=>x.id===id)||{}).is_default){defRole=roles[me.id];const nb=$('newsrvbtn');if(nb)nb.classList.toggle('hidden',defRole!=='owner')}
-  if(!_migrated&&(servers.find(x=>x.id===id)||{}).is_default){_migrated=true;migrateImages()}bans=[];if(isStaff()){const {data:b}=await sb.from('server_bans').select('*').eq('server_id',id);bans=b||[]}
-  {const {data:cd}=await sb.from('custom_roles').select('*').eq('server_id',id);croles=cd||[];cr={};members.forEach(x=>{if(x.custom_role)cr[x.user_id]=croles.find(y=>y.id===x.custom_role)})}
+  if(!_migrated&&(servers.find(x=>x.id===id)||{}).is_default){_migrated=true;migrateImages()}{const {data:cd}=await sb.from('custom_roles').select('*').eq('server_id',id);croles=cd||[];cr={};members.forEach(x=>{if(x.custom_role)cr[x.user_id]=croles.find(y=>y.id===x.custom_role)})}
+  if((servers.find(x=>x.id===id)||{}).is_default){defCr=cr[me.id]||null;defRk=rankOf(me.id)}
+  bans=[];if(isStaff()){const {data:b}=await sb.from('server_bans').select('*').eq('server_id',id);bans=b||[]}
   $('sh').innerHTML=`<span class="truncate">${esc(s.name)}</span><span class="flex items-center gap-2 flex-shrink-0"><button onclick="openWeb()" title="Beanchat — search the web" class="text-base text-[#949ba4] hover:text-white">🫘</button>${canSettings()?'<button onclick="openServerSettings()" title="Server Settings" class="text-base text-[#949ba4] hover:text-white">⚙</button>':''}</span>`;
   $('mem').classList.remove('hidden');drawChannels();try{drawMembers()}catch(e){console.error('drawMembers failed:',e);$('mem').innerHTML='<p class="text-xs text-[#f23f43]">Member list failed to load. Check the browser console (F12) for details.</p>'}
   watchVoiceRosters();
@@ -206,7 +220,7 @@ function drawMembers(){
   members.forEach(m=>{
     const custom=m.custom_role?croles.find(r=>r.id===m.custom_role):null;
     const key=custom?('c_'+custom.id):('b_'+m.role);
-    if(!groupsMap[key])groupsMap[key]={key,label:custom?custom.name:m.role.charAt(0).toUpperCase()+m.role.slice(1),color:custom?custom.color:null,rankVal:(!custom&&m.role==='alter')?5.9:rank(custom?custom.base:m.role),pos:custom?(custom.position||0):0,items:[]};
+    if(!groupsMap[key])groupsMap[key]={key,label:custom?custom.name:m.role.charAt(0).toUpperCase()+m.role.slice(1),color:custom?custom.color:null,rankVal:custom?(custom.position||0):(m.role==='owner'?OWNER_RANK:0),pos:0,items:[]};
     groupsMap[key].items.push(m);
   });
   const groups=Object.values(groupsMap).sort((ga,gb)=>gb.rankVal-ga.rankVal||gb.pos-ga.pos||ga.label.localeCompare(gb.label));
@@ -215,10 +229,10 @@ function drawMembers(){
     const closed=roleClosed.includes(g.key);
     const rows=g.items.sort((a,b2)=>nm(a).localeCompare(nm(b2))).map(m=>{
       const p=profiles[m.user_id]||{},self=m.user_id===me.id,u=m.user_id,acts=[];
-      if(canManage(m.role)&&!self)acts.push(b('Kick',`kick('${u}')`));
+      if(canManage(u)&&!self)acts.push(b('Kick',`kick('${u}')`));
       if(def&&!self){
-        if(until(p,'banned_until')){if(canBan(m.role))acts.push(b('Unban',`punish('${u}','ban',0)`))}else if(canBan(m.role))acts.push(b('Ban',`askBan('${u}')`));
-        if(until(p,'muted_until')){if(canMute(m.role))acts.push(b('Unmute',`punish('${u}','mute',0)`))}else if(canMute(m.role))acts.push(b('Mute',`askMute('${u}')`));
+        if(until(p,'banned_until')){if(canBan(u))acts.push(b('Unban',`punish('${u}','ban',0)`))}else if(canBan(u))acts.push(b('Ban',`askBan('${u}')`));
+        if(until(p,'muted_until')){if(canMute(u))acts.push(b('Unmute',`punish('${u}','mute',0)`))}else if(canMute(u))acts.push(b('Mute',`askMute('${u}')`));
       }
       const tagline=(until(p,'banned_until')?'🚫 banned':'')+(until(p,'banned_until')&&until(p,'muted_until')?' · ':'')+(until(p,'muted_until')?'🔇 muted':'');
       const onlineNow=u===me.id||online.has(u);
@@ -241,7 +255,7 @@ function drawChannels(){
   const groups=[],seen={};
   channels.forEach(c=>{const k=c.category||'';if(!(k in seen)){seen[k]=[];groups.push(k)}seen[k].push(c)});
   const chanBtn=c=>c.is_voice?voiceBtn(c):chanBtnText(c);
-  const chanBtnText=c=>`<button data-cid="${c.id}" onclick="openChannel('${c.id}')" class="w-full text-left px-2 py-1.5 rounded-md text-sm ${isMutedCh(c.id)?'opacity-50 ':''}${cur.id===c.id?'bg-[#404249] text-white':'text-[#949ba4] hover:bg-[#35373c]'}"> ${c.is_forum?'💬 ':c.min_read_rank>1?'🔒 ':c.min_post_rank>1?'📢 ':'# '}${esc(c.name)}${c.slow_seconds>0?' 🐌':''}${unreadCh[c.id]&&!ment[c.id]?'<span class="float-right w-2 h-2 mt-1.5 rounded-full bg-white"></span>':''}${ment[c.id]?`<span class="float-right bg-[#f23f43] text-white text-[10px] font-black px-1.5 rounded-full">${ment[c.id]}</span>`:''}</button>`;
+  const chanBtnText=c=>`<button data-cid="${c.id}" onclick="openChannel('${c.id}')" class="w-full text-left px-2 py-1.5 rounded-md text-sm ${isMutedCh(c.id)?'opacity-50 ':''}${cur.id===c.id?'bg-[#404249] text-white':'text-[#949ba4] hover:bg-[#35373c]'}"> ${c.is_forum?'💬 ':(c.min_read_role||c.min_read_rank>1)?'🔒 ':(c.min_post_role||c.min_post_rank>1)?'📢 ':'# '}${esc(c.name)}${c.slow_seconds>0?' 🐌':''}${unreadCh[c.id]&&!ment[c.id]?'<span class="float-right w-2 h-2 mt-1.5 rounded-full bg-white"></span>':''}${ment[c.id]?`<span class="float-right bg-[#f23f43] text-white text-[10px] font-black px-1.5 rounded-full">${ment[c.id]}</span>`:''}</button>`;
   window._cats=groups;const col=getCollapsed();
   $('sc').innerHTML=groups.map((k,i)=>{
     if(!k)return seen[k].map(chanBtn).join('');
@@ -265,7 +279,7 @@ function toggleCat(i){
 function newChannel(){openChannelForm(null)}
 async function openChannel(id){
   const since=lastRead[id]||lastRead._init;cur={type:'ch',id};delete ment[id];delete unreadCh[id];markRead(id);drawChannels();
-  const c=channels.find(x=>x.id===id);replyTo=null;$('rb').classList.add('hidden');setComposer(rank(myRole())>=(c.min_post_rank||1));$('chtitle').innerHTML='# '+esc(c.name)+(c.topic?`<span class="ml-3 text-xs font-normal text-[#949ba4] truncate">${esc(c.topic)}</span>`:'');
+  const c=channels.find(x=>x.id===id);replyTo=null;$('rb').classList.add('hidden');setComposer(canPostChan(c));$('chtitle').innerHTML='# '+esc(c.name)+(c.topic?`<span class="ml-3 text-xs font-normal text-[#949ba4] truncate">${esc(c.topic)}</span>`:'');
   $('pinbtn').classList.remove('hidden');$('searchbtn').classList.remove('hidden');$('searchbar').classList.add('hidden');$('msgs').classList.remove('hidden');$('callbtn').classList.add('hidden');$('groupcallbtn').classList.add('hidden');$('groupsettingsbtn').classList.add('hidden');closeLeftMobile();subscribeTyping();
   const {data:dd}=await sb.from('messages').select('*').eq('channel_id',id).order('created_at',{ascending:false}).limit(PAGE);const data=(dd||[]).reverse();
   rx={};const ids=(data||[]).map(x=>x.id);if(ids.length){const {data:r}=await sb.from('reactions').select('*').in('message_id',ids);(r||[]).forEach(x=>(rx[x.message_id]=rx[x.message_id]||[]).push(x))}
@@ -325,7 +339,7 @@ function row(m,pm){
   const p=profiles[m.sender_id]||{username:'unknown'};
   const r=cur.type==='ch'?roles[m.sender_id]:null;
   const t=new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  const del=m.sender_id===me.id||(cur.type==='ch'&&rank(myRole())>=3);
+  const del=m.sender_id===me.id||(cur.type==='ch'&&myPerm('manage_messages'));
   const compact=!!pm&&pm.sender_id===m.sender_id&&!m.reply_to&&!isBot(p)&&dayKey(pm.created_at)===dayKey(m.created_at)&&(new Date(m.created_at)-new Date(pm.created_at))<300000;
   const t2=new Date(m.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
   return `<div id="m_${m.id}" class="group flex gap-3 ${compact?'!mt-0.5 ':''}${mentionsMe(m)?'bg-yellow-500/10 border-l-2 border-yellow-500 pl-2':''}">${compact?`<span class="w-9 flex-shrink-0 text-[9px] leading-5 text-center text-[#949ba4] opacity-0 group-hover:opacity-100 select-none whitespace-nowrap">${t2}</span>`:`<span onclick="showProfile('${m.sender_id}')" class="cursor-pointer flex-shrink-0">${av(p,9)}</span>`}<div class="min-w-0">${compact?`${m.pinned?'📌 ':''}${del?`<button onclick="delMsg('${m.id}')" class="hidden group-hover:inline float-right text-[10px] text-[#949ba4] hover:text-[#f23f43]">delete</button>`:''}`:`<span onclick="showProfile('${m.sender_id}')" class="font-bold text-sm cursor-pointer hover:underline" style="color:${col(p)}">${esc(dn(p))}</span>${isBot(p)?' '+BOTBADGE:''}${utag(p)}${r&&r!=='member'?` ${tag(p,r)}`:''} <span class="text-[10px] text-[#949ba4]">${t}</span>${m.pinned?' 📌':''}${del?` <button onclick="delMsg('${m.id}')" class="hidden group-hover:inline text-[10px] text-[#949ba4] hover:text-[#f23f43]">delete</button>`:''}`}${replyLine(m)}${m.file_url&&m.file_url.startsWith(FILEBASE)?`<a href="${esc(m.file_url)}" target="_blank" class="mt-1 flex items-center gap-2 bg-[#2b2d31] border border-[#3f4147] rounded-lg px-3 py-2 w-fit text-xs text-[#5865f2] hover:underline">📄 ${esc(m.file_name||'file')}</a>`:''}${m.image_url&&m.image_url.startsWith(IMGBASE)?`<img src="${esc(m.image_url)}" loading="lazy" onclick="lightbox(this.src)" class="mt-1 max-h-64 max-w-xs rounded-lg cursor-pointer">`:''}<p class="text-sm" data-t>${fmt(m)}${m.edited_at?' <span class="text-[10px] text-[#949ba4]">(edited)</span>':''}</p><div id="rx_${m.id}" class="flex flex-wrap gap-1 mt-1"></div><div id="lp_${m.id}"></div>${m.channel_id?`<button id="thr_${m.id}" onclick="openThread('${m.id}')" class="hidden mt-1 text-xs text-[#00a8fc] hover:underline"></button>`:''}</div></div>`;
@@ -455,7 +469,7 @@ function dmWhy(err){
 function canPostHere(){
   if(cur.type!=='ch')return true;
   const c=channels.find(x=>x.id===cur.id);
-  return !!c&&rank(myRole())>=(c.min_post_rank||1);
+  return !!c&&canPostChan(c);
 }
 function setComposer(can){
   $('i').disabled=!can;
@@ -521,11 +535,11 @@ async function addByName(){const n=$('fadd').value.trim().toLowerCase().replace(
 async function runCmd(line){
   const [c,name,arg]=line.slice(1).trim().split(/\s+/);const cmd=(c||'').toLowerCase();
   if(cmd==='help')return sys('BeanBot: /balance · /coinflip 100 heads · /slots 100 · /roulette 100 red · /dice 100 4 · /blackjack 100 (then /hit, /stand or /double) · /luck (beans are play money) · /welcome · /goodbye (admins: join and leave messages) · /poll question | option 1 | option 2 · /polls · /endpoll number · /usercount · /serverinfo · /userinfo user · /topbeans · /roll 2d6 · /flip · /8ball question · /choose a | b | c · /rate thing · /hug user · /beanfact · /ping · /cmds · admins: /addcmd name text · /delcmd name · /botset disable|enable command · mods: /warn user reason · /warnings user · /purge 20 · /mutes · admins: /clearwarns user · /slowmode 10 · /announce text · anyone: /seen user · /stats · owner: /automod (automatic mutes for banned words, spam and warnings). Other commands: /bold text (admins and up: big bold message) · /ban user hours · /unban user · /mute user minutes · /unmute user · /kick user · /nick user newname · /newrole name #color member|verified|mod|admin · /giverole user rolename|none · /delrole name · /deleteuser user · /gift user amount · /switch user · /banword word · /unbanword word · /banwords · /auditlog. Built-in roles are managed only from the gear icon. Deleting a server is only in its right-click menu. /hwidban user bans the devices they have used (works through VPNs) · /unhwidban user · /banip user bans the network address on their account, and is not foolproof since addresses change · /ips user · /alts user · /iplog');
+  {const need=cmdNeed(cmd);if(need&&cmd!=='warnings'&&cmd!=='endpoll'&&!canCmd(need))return sys(need==='owner'?'Only the owner can use /'+cmd+'.':'You need the '+permLabel(need)+' permission to use /'+cmd+'.')}
   if(!STAFF_CMDS.has(cmd))return botCall(cmd,line);
   if(cmd==='bold'){
     if(cur.type!=='ch')return sys('/bold only works in server channels.');
     if(!canPostHere())return sys('You do not have permission to type in this channel.');
-    if(!isStaff())return sys('Only admins and up can use /bold.');
     const txt=line.slice(1).trim().replace(/^\S+\s*/,'').trim();
     if(!txt)return sys('Usage: /bold your text');
     {const mu=until(me,'muted_until');if(mu)return alert('You are muted until '+mu.toLocaleString())}
@@ -536,7 +550,7 @@ async function runCmd(line){
   }
   const P=line.slice(1).trim().split(/\s+/);
   const rpc=async(f,a,ok)=>{const {error}=await sb.rpc(f,a);if(error)return sys(error.message);if(srvId)await openServer(srvId);sys(ok)};
-  if(cmd==='newrole'){if(!srvId)return sys('Open a server first.');const n=P[1],c=P[2],b=(P[3]||'').toLowerCase();if(!n||!/^#[0-9a-fA-F]{6}$/.test(c||'')||!['member','verified','mod','admin','manager','coowner'].includes(b))return sys('Usage: /newrole name #hexcolor member|verified|mod|admin|manager|coowner');return rpc('create_role',{sid:srvId,rname:n,rcolor:c,rbase:b},'Role "'+n+'" created. Give it with /giverole username '+n)}
+  if(cmd==='newrole'){if(!srvId)return sys('Open a server first.');const n=P[1],c=P[2];if(!n||!/^#[0-9a-fA-F]{6}$/.test(c||''))return sys('Usage: /newrole name #hexcolor. The role starts at the bottom of the list; tick its permissions and move it up in Server Settings > Roles.');return rpc('create_role',{sid:srvId,rname:n,rcolor:c,rperms:{}},'Role "'+n+'" created at the bottom. Give it with /giverole username '+n)}
   if(cmd==='delrole'){const r=croles.find(x=>x.name.toLowerCase()===(P[1]||'').toLowerCase());if(!r)return sys('No custom role with that name.');return rpc('delete_role',{rid:r.id},'Role deleted')}
   if(cmd==='banword'||cmd==='unbanword')return rpc(cmd==='banword'?'ban_word':'unban_word',{w:(P[1]||'').toLowerCase()},cmd+': '+P[1]);
   if(cmd==='banwords'){try{const w=await bannedWordList(true);return sys(w.length?'Blocked words: '+w.join(', '):'No blocked words are set.')}catch(e){return sys(e.message||'Could not load the list.')}}
@@ -557,7 +571,7 @@ async function runCmd(line){
     await loadProfiles();if(kind==='ban'&&srvId)await openServer(srvId);else if(srvId)drawMembers();
     return sys(undo?cmd+' '+u.username+': done':u.username+(kind==='ban'?' banned from the main server for '+arg+' hours':' muted for '+arg+' minutes'));
   }
-  if(cmd==='nick'){if(!canNickname())return sys('Only the owner and co-owners can change nicknames.');const nk=P.slice(2).join(' ').trim();return rpc('force_nick',{uid:u.id,nick:nk||null},nk?u.username+' is now called '+nk:'Nickname of '+u.username+' was reset')}
+  if(cmd==='nick'){if(!canNickname())return sys('You need the Change Nicknames permission.');const nk=P.slice(2).join(' ').trim();return rpc('force_nick',{uid:u.id,nick:nk||null},nk?u.username+' is now called '+nk:'Nickname of '+u.username+' was reset')}
   if(cmd==='giverole'){if(!srvId)return sys('Open a server first.');const rn=(P[2]||'').toLowerCase(),r=croles.find(x=>x.name.toLowerCase()===rn);if(!r&&rn!=='none')return sys('No custom role "'+(P[2]||'')+'". Make one with /newrole, or use /giverole user none');return rpc('give_role',{sid:srvId,uid:u.id,rid:r?r.id:null},'Updated '+u.username)}
   if(cmd==='deleteuser'){if(!(await askConfirm('Permanently delete the account '+u.username+'?')))return;return rpc('admin_delete_account',{uid:u.id},u.username+' was deleted')}
   if(cmd==='banip'){const {data,error}=await sb.rpc('ban_ip',{target_uid:u.id});if(error)return sys(error.message);return sys('Banned the address on record for '+u.username+' ('+data+'). This does not remove their account access on its own — pair it with /ban if needed.')}
@@ -581,31 +595,97 @@ async function runCmd(line){
 let ment={},sugList=[],sugIdx=0,sugStart=0,sugAt=false,sugCmd=false,customCmds=[],customCmdsFor=null;
 // custom commands made with /addcmd are listed on / as well (quietly skipped if the table can't be read)
 async function loadCustomCmds(){if(!srvId||customCmdsFor===srvId)return;customCmdsFor=srvId;try{const {data}=await sb.from('bot_commands').select('name').eq('server_id',srvId);customCmds=(data||[]).map(x=>x.name).sort();if($('i').value.startsWith('/'))suggest()}catch(e){customCmds=[]}}
-// every slash command: [name, usage, what it does, who] (who: '' = anyone, 'mod', 'admin', 'owner' …). Typing / lists them all.
+// every slash command: [name, usage, what it does, permission it needs, hidden]. permission: '' = anyone, 'owner' = the server owner, or a permission key from Server Settings > Roles.
+// This is only the starting copy: the table bc_commands (Server Settings > Commands) replaces it as soon as it loads.
 // usernames listed in the bc_alt_hidden table never show up in /alts (setup/hide_from_alts.sql)
 async function hiddenAlts(){try{const {data}=await sb.from('bc_alt_hidden').select('username');return new Set((data||[]).map(x=>String(x.username).toLowerCase()))}catch(e){return new Set()}}
-const CMD_INFO=[
-['help','','Show what BeanBot and the staff commands do',''],['cmds','','List every BeanBot command, custom ones too',''],
-['balance','[user]','Show your bean balance',''],['topbeans','','The five richest people in beans',''],['luck','','See if a luck event is running',''],
-['coinflip','100 heads','Bet beans on a coin flip',''],['slots','100','Spin the slot machine',''],['roulette','100 red','Bet on red, black, green, odd, even or a number',''],['dice','100 4','Guess the dice roll, 1 to 6',''],
-['blackjack','100','Start a blackjack hand',''],['hit','','Blackjack: take a card',''],['stand','','Blackjack: keep your hand',''],['double','','Blackjack: double your bet and take one card',''],
-['roll','2d6','Roll dice',''],['flip','','Flip a coin',''],['8ball','question','Ask the magic 8-ball',''],['choose','a | b | c','Let BeanBot pick one',''],['rate','thing','BeanBot rates it out of 10',''],['hug','@user','Give someone a hug',''],['beanfact','','A random bean fact',''],['ping','','Check BeanBot is awake',''],
-['usercount','','How many members and accounts',''],['serverinfo','','Server details',''],['userinfo','[user]','Info about a person',''],['seen','[user]','When someone was last online',''],['stats','','Messages in the last 24 hours',''],
-['poll','question | a | b','Start a poll (add 1h to auto-close it)',''],['polls','','Open polls',''],['endpoll','number','Close a poll','poll starter or mod'],
-['banwords','','Show the blocked words list',''],['unblock','user','Unblock someone you blocked',''],['warnings','[user]','See warnings','mod to see others'],
-['warn','user reason','Warn someone','mod'],['purge','20 [user]','Delete recent messages','mod'],['mutes','','Who is muted or banned right now','mod'],['mute','user minutes','Mute someone','mod'],['unmute','user','Unmute someone','mod'],
-['kick','user','Remove someone from the server','mod'],['ban','user [minutes]','Ban someone','admin'],['unban','user','Lift a ban','admin'],['clearwarns','user','Clear someone\'s warnings','admin'],
-['slowmode','10','Slow mode for this channel (off to stop)','admin'],['announce','text','BeanBot announcement','admin'],['bold','text','Post big bold text','admin'],['nick','user name','Change someone\'s nickname','admin'],
-['welcome','','Welcome message settings','admin'],['goodbye','','Goodbye message settings','admin'],['addcmd','name text','Make a custom command','admin'],['delcmd','name','Delete a custom command','admin'],['botset','disable roll','Turn a BeanBot command on or off','admin'],
-['banword','word','Add a blocked word','admin'],['unbanword','word','Remove a blocked word','admin'],['auditlog','','Recent staff actions','admin'],['reports','','Reported messages','admin'],
-['giverole','user role','Give a role','admin'],['role','user role','Change someone\'s role','admin'],['newrole','name #color tier','Make a custom role','admin'],['delrole','name','Delete a custom role','admin'],
-['automod','','Auto-mod settings','co-owner'],['ips','user','IP addresses used by an account','admin'],['alts','user','Accounts that share an IP','admin'],['iplog','','Recent logins by IP','admin'],
-['banip','ip','Ban an IP address','admin'],['unbanip','ip','Unban an IP address','admin'],['hwidban','user','Ban someone\'s device','admin'],['unhwidban','user','Unban a device','admin'],
-['deleteuser','user','Permanently delete an account','owner'],['gift','user amount','Give someone beans','owner'],['switch','user','Switch to another account','owner'],['reload','','Reload everyone\'s page','owner'],
-['beanbottest','','BeanBot self-test','owner'],['beanbotluck','20 60','Start a luck event','owner'],['beanbotpoor','user amount','Take beans from someone','owner'],['ecopurge','','Reset everyone\'s beans','owner']
+let CMD_INFO=[
+["help","","Show what BeanBot and the staff commands do","",false],
+["cmds","","List every BeanBot command, custom ones too","",false],
+["balance","[user]","Show your bean balance","",false],
+["topbeans","","The five richest people in beans","",false],
+["luck","","See if a luck event is running","",false],
+["coinflip","100 heads","Bet beans on a coin flip","",false],
+["slots","100","Spin the slot machine","",false],
+["roulette","100 red","Bet on red, black, green, odd, even or a number","",false],
+["dice","100 4","Guess the dice roll, 1 to 6","",false],
+["blackjack","100","Start a blackjack hand","",false],
+["hit","","Blackjack: take a card","",false],
+["stand","","Blackjack: keep your hand","",false],
+["double","","Blackjack: double your bet and take one card","",false],
+["roll","2d6","Roll dice","",false],
+["flip","","Flip a coin","",false],
+["8ball","question","Ask the magic 8-ball","",false],
+["choose","a | b | c","Let BeanBot pick one","",false],
+["rate","thing","BeanBot rates it out of 10","",false],
+["hug","@user","Give someone a hug","",false],
+["beanfact","","A random bean fact","",false],
+["ping","","Check that BeanBot is awake","",false],
+["usercount","","How many members and accounts","",false],
+["serverinfo","","Server details","",false],
+["userinfo","[user]","Info about a person","",false],
+["seen","[user]","When someone was last online","",false],
+["stats","","Messages in the last 24 hours","",false],
+["poll","question | a | b","Start a poll (add 1h to auto-close it)","",false],
+["polls","","Open polls","",false],
+["endpoll","number","Close a poll (its starter can always do this)","manage_messages",false],
+["banwords","","Show the blocked words list","",false],
+["unblock","user","Unblock someone you blocked","",false],
+["warnings","[user]","See warnings (anyone can see their own)","timeout_members",false],
+["warn","user reason","Warn someone","timeout_members",false],
+["purge","20 [user]","Delete recent messages","manage_messages",false],
+["mutes","","Who is muted or banned right now","timeout_members",false],
+["mute","user minutes","Mute someone","timeout_members",false],
+["unmute","user","Unmute someone","timeout_members",false],
+["kick","user","Remove someone from the server","kick_members",false],
+["ban","user [minutes]","Ban someone","ban_members",false],
+["unban","user","Lift a ban","ban_members",false],
+["clearwarns","user","Clear someone's warnings","manage_server",false],
+["slowmode","10","Slow mode for this channel (off to stop)","manage_channels",false],
+["announce","text","BeanBot announcement","manage_server",false],
+["bold","text","Post big bold text","manage_server",false],
+["nick","user name","Change someone's nickname","manage_nicknames",false],
+["welcome","","Welcome message settings","manage_server",false],
+["goodbye","","Goodbye message settings","manage_server",false],
+["addcmd","name text","Make a custom command","manage_server",false],
+["delcmd","name","Delete a custom command","manage_server",false],
+["botset","disable roll","Turn a BeanBot command on or off","manage_server",false],
+["banword","word","Add a blocked word","manage_words",false],
+["unbanword","word","Remove a blocked word","manage_words",false],
+["auditlog","","Recent staff actions","view_audit_log",false],
+["reports","","Reported messages","manage_messages",false],
+["giverole","user role","Give a role","manage_roles",false],
+["role","user role","Change someone's role","manage_roles",false],
+["newrole","name #color","Make a custom role","manage_roles",false],
+["delrole","name","Delete a custom role","manage_roles",false],
+["automod","","Auto-mod settings","manage_automod",false],
+["ips","user","IP addresses used by an account","view_ips",false],
+["alts","user","Accounts that share an IP","view_ips",false],
+["iplog","","Recent logins by IP","view_ips",false],
+["banip","ip","Ban an IP address","ban_ips",false],
+["unbanip","ip","Unban an IP address","ban_ips",false],
+["hwidban","user","Ban someone's device","ban_devices",false],
+["unhwidban","user","Unban a device","ban_devices",false],
+["devalts","user","Accounts that share a device","view_ips",false],
+["deleteuser","user","Permanently delete an account","delete_accounts",false],
+["gift","user amount","Give someone beans","owner",false],
+["switch","user","Switch to another account","owner",false],
+["reload","","Reload everyone's page","owner",false],
+["beanbottest","","BeanBot self-test","owner",true],
+["beanbotluck","20 60","Start a luck event","owner",true],
+["beanbotpoor","user amount","Take beans from someone","owner",true],
+["ecopurge","","Reset everyone's beans","owner",true]
 ];
-const OWNER_ONLY_CMDS=new Set(['beanbottest','beanbotluck','beanbotpoor','ecopurge']);
-const CMDS=CMD_INFO.map(x=>x[0]),ROLES=['manager','admin','goodgirl','mod','verified','member'];
+const cmdNames=()=>CMD_INFO.map(x=>x[0]);
+const cmdNeed=c=>{const r=CMD_INFO.find(x=>x[0]===c);return r?r[3]:''};
+const canCmd=need=>!need||(need==='owner'?defRole==='owner':(myPerm(need)||defPerm(need)));
+const permLabel=k=>k==='owner'?'Owner':((PERMS.find(x=>x[0]===k)||[])[1]||k);
+const roleKey=r=>String(r.name||'').toLowerCase().replace(/[^a-z0-9_]/g,'');
+// bot accounts and the command table live in the database (Server Settings > Bots & Lists / Commands)
+async function loadSiteLists(){
+  try{const {data}=await sb.from('bc_bots').select('username');if(data&&data.length)BOT_NAMES=data.map(x=>String(x.username).toLowerCase())}catch(e){}
+  try{const {data}=await sb.from('bc_commands').select('*').order('ord');if(data&&data.length)CMD_INFO=data.map(r=>[r.name,r.usage||'',r.info||'',r.perm||'',!!r.hidden])}catch(e){}
+}
 const BOLDMARK='[[big]]';
 function plainText(c){
   c=String(c||'');
@@ -615,7 +695,7 @@ function plainText(c){
   return c;
 }
 // accounts that get BeanBot's look: BOT badge, embed cards, no edit button. Add your own bot accounts' usernames here.
-const BOT_NAMES=['beanbot'];
+let BOT_NAMES=['beanbot']; // replaced by the bc_bots table once it loads
 const isBot=p=>!!p&&BOT_NAMES.includes(p.username);
 const BOTBADGE='<span class="text-[9px] font-black uppercase text-white px-1.5 rounded bg-[#5865f2]">BOT</span>';
 
@@ -640,16 +720,16 @@ function fmt(m){
     if(c.startsWith('[[embed]]')){try{return embedBox(JSON.parse(c.slice(9)))}catch(e){}}
     else return autoEmbed(c);
   }
-  if(c.startsWith(BOLDMARK)&&m.channel_id&&rank(roles[m.sender_id])>=4)h='<span style="display:block;font-size:1.875rem;line-height:1.15;font-weight:900">'+md(esc(c.slice(BOLDMARK.length).trim()))+'</span>';
+  if(c.startsWith(BOLDMARK)&&m.channel_id&&permIn(roles[m.sender_id],cr[m.sender_id],'manage_server'))h='<span style="display:block;font-size:1.875rem;line-height:1.15;font-weight:900">'+md(esc(c.slice(BOLDMARK.length).trim()))+'</span>';
   else h=md(esc(c.startsWith(BOLDMARK)?c.slice(BOLDMARK.length).trim():c));
   h='<span style="white-space:pre-wrap">'+h+'</span>';
   return h;
 }
 function mention(t){return t.replace(/@(everyone|here|[a-z0-9_]+)/gi,(x,n)=>{const l=n.toLowerCase();const u=Object.values(profiles).find(p=>p.username===l);
   if(u)return `<span onclick="showProfile('${u.id}')" class="mention cursor-pointer bg-[#5865f2]/30 text-[#c9cdfb] hover:bg-[#5865f2] hover:text-white rounded px-0.5">@${l}</span>`;
-  return(l==='everyone'||l==='here'||Object.keys(RANK).includes(l))?`<span class="bg-[#5865f2]/30 text-[#c9cdfb] rounded px-0.5">@${l}</span>`:x})}
+  return(l==='everyone'||l==='here'||croles.some(r=>roleKey(r)===l))?`<span class="bg-[#5865f2]/30 text-[#c9cdfb] rounded px-0.5">@${l}</span>`:x})}
 function mentionsMe(m){if(m.sender_id===me.id)return false;
-  if(m.channel_id){if(/@(everyone|here)\b/i.test(m.content))return true;const myR=roles[me.id];if(myR&&new RegExp('@'+myR+'\\b','i').test(m.content))return true;}
+  if(m.channel_id){if(/@(everyone|here)\b/i.test(m.content))return true;const myR=cr[me.id]?roleKey(cr[me.id]):'';if(myR&&new RegExp('@'+myR+'\\b','i').test(m.content))return true;}
   return new RegExp('@'+me.username+'\\b','i').test(m.content);
 }
 function toast(t,err){let c=$('toasts');if(!c){c=document.createElement('div');c.id='toasts';c.className='fixed bottom-24 right-4 z-[65] flex flex-col gap-2 items-end pointer-events-none';document.body.appendChild(c)}const d=document.createElement('div');d.className='bg-[#2b2d31] border-l-4 '+(err?'border-[#f23f43]':'border-yellow-500')+' text-sm text-white px-3 py-2 rounded shadow-lg max-w-xs pointer-events-auto';d.textContent=t;c.appendChild(d);setTimeout(()=>d.remove(),Math.min(10000,3000+t.length*45))}
@@ -674,9 +754,8 @@ const emojify=t=>String(t).replace(/:([a-z0-9_+-]{1,32}):/gi,(m,n)=>emojiMap[n.t
 loadEmojiMap();
 function suggest(){
   const el=$('i'),v=el.value.slice(0,el.selectionStart);let m,list=[],start=0;sugAt=false;sugEmoji=false;sugCmd=false;
-  if(m=v.match(/^\/(\w*)$/)){start=1;sugCmd=true;const q=m[1].toLowerCase();loadCustomCmds();list=[...CMDS.filter(c=>!OWNER_ONLY_CMDS.has(c)||myRole()==='owner'),...customCmds.filter(c=>!CMDS.includes(c))].filter(c=>c.startsWith(q))}
+  if(m=v.match(/^\/(\w*)$/)){start=1;sugCmd=true;const q=m[1].toLowerCase();loadCustomCmds();list=[...CMD_INFO.filter(x=>!x[4]||defRole==='owner').map(x=>x[0]),...customCmds.filter(c=>!cmdNames().includes(c))].filter(c=>c.startsWith(q))}
   else if(m=v.match(/^\/(ban|unban|mute|unmute|kick|unblock|nick|giverole|deleteuser|gift|switch|banip|unbanip|devalts|hwidban|unhwidban|ips)\s+@?(\w*)$/i)){start=v.length-m[2].length;list=names().filter(n=>n.startsWith(m[2].toLowerCase()))}
-  else if(m=v.match(/^\/role\s+\S+\s+(\w*)$/i)){start=v.length-m[1].length;list=ROLES.filter(r=>r.startsWith(m[1].toLowerCase()))}
   else if(m=v.match(/(?:^|\s)@(\w*)$/)){sugAt=true;start=v.length-m[1].length;
     const q=m[1].toLowerCase();
     const roleNames=(cur.type==='ch'?[...new Set(Object.values(roles))]:[]).filter(r=>r.startsWith(q));
@@ -696,7 +775,7 @@ function drawSug(){const e=$('sug');if(!sugList.length){e.classList.add('hidden'
   const info=Object.fromEntries(CMD_INFO.map(x=>[x[0],x]));
   e.innerHTML=sugList.map((x,i)=>{
     const on=i===sugIdx,cls=`px-2 py-1 rounded cursor-pointer ${on?'bg-[#404249] text-white':'text-[#b5bac1]'}`;
-    if(sugCmd){const c=info[x];return `<div onmousedown="pickSug(${i});return false" class="${cls} flex items-baseline gap-2"><span class="font-semibold text-white flex-shrink-0">/${esc(x)}${c&&c[1]?` <span class="font-normal text-[#80848e]">${esc(c[1])}</span>`:''}</span><span class="text-xs text-[#949ba4] truncate flex-1 min-w-0">${esc(c?c[2]:'Custom command')}</span>${c&&c[3]?`<span class="text-[10px] uppercase font-bold text-[#80848e] flex-shrink-0">${esc(c[3])}</span>`:''}</div>`}
+    if(sugCmd){const c=info[x];return `<div onmousedown="pickSug(${i});return false" class="${cls} flex items-baseline gap-2"><span class="font-semibold text-white flex-shrink-0">/${esc(x)}${c&&c[1]?` <span class="font-normal text-[#80848e]">${esc(c[1])}</span>`:''}</span><span class="text-xs text-[#949ba4] truncate flex-1 min-w-0">${esc(c?c[2]:'Custom command')}</span>${c&&c[3]?`<span class="text-[10px] uppercase font-bold text-[#80848e] flex-shrink-0">${esc(permLabel(c[3]))}</span>`:''}</div>`}
     return `<div onmousedown="pickSug(${i});return false" class="${cls}">${sugEmoji?`<span class="inline-block w-6">${emojiMap[x]}</span> :${esc(x)}:`:(sugAt?'@':'')+esc(x)}</div>`}).join('');
   const a=e.children[sugIdx];if(a)a.scrollIntoView({block:'nearest'})}
 function pickSug(i){const el=$('i'),b=el.value.slice(0,sugStart),a=el.value.slice(el.selectionStart).trimStart(),w=sugEmoji?emojiMap[sugList[i]]:sugList[i];
@@ -732,7 +811,7 @@ function showCtx(x,y,h){const c=$('ctx');c.innerHTML=h;c.classList.remove('hidde
 const sep='<div class="h-px bg-[#35373c] my-1"></div>';
 const mi=(ic,t,fn,red,keep,arrow)=>`<div onclick="${keep?'event.stopPropagation();':''}${fn}" class="flex items-center gap-3 px-3 py-1.5 rounded cursor-pointer hover:bg-[#35373c] ${red?'text-[#f23f43]':'text-[#dbdee1]'}"><span class="ic w-5 text-center text-xs">${ic}</span><span class="flex-1">${t}</span>${arrow?'<span class="ar">›</span>':''}</div>`;
 const emo=(id,e)=>`<span onclick="toggleRx('${id}','${e}')" class="w-9 h-9 flex items-center justify-center text-xl rounded-full hover:bg-[#35373c] cursor-pointer">${e}</span>`;
-function msgMenu(id,x,y){const m=msgCache[id];if(!m)return;const ch=!!m.channel_id,self=m.sender_id===me.id,mod=ch&&(rank(myRole())>=3||myPerm('manage_messages'));let h='';
+function msgMenu(id,x,y){const m=msgCache[id];if(!m)return;const ch=!!m.channel_id,self=m.sender_id===me.id,mod=ch&&myPerm('manage_messages');let h='';
   h+=`<div class="flex gap-2 px-1 pt-1 pb-2">${QUICK.map(e=>emo(id,e)).join('')}</div>`+mi('☺','Add reaction',`moreRx('${id}',${x},${y})`,0,1,1)+sep;
   if(self&&!isBot(profiles[m.sender_id]))h+=mi('✎','Edit message',`editMsg('${id}')`);
   h+=mi('↩','Reply',`startReply('${id}')`);
@@ -827,7 +906,7 @@ function editChannel(id){openChannelForm(id)}
 function openChannelForm(id){
   chEditing=id;const c=id?channels.find(x=>x.id===id):null;if(id&&!c)return;
   const cats=[...new Set(channels.map(x=>x.category).filter(Boolean))];
-  const ranks='<option value="1">Everyone</option><option value="2">Verified and up</option><option value="3">Mods and up</option><option value="4">Admins and up</option><option value="5">Managers and up</option><option value="6">Co-owners and up</option><option value="7">Alter and up</option><option value="8">Owner only</option>';
+  const ranks='<option value="">Everyone</option>'+[...croles].sort((a,b)=>(b.position||0)-(a.position||0)).map(r=>`<option value="${r.id}">${esc(r.name)} and up</option>`).join('')+'<option value="__owner">Owner only</option>';
   $('vpc').innerHTML=`<div class="flex items-center justify-between mb-3"><h3 class="font-bold text-white">${c?'Edit channel':'New channel'}</h3><button onclick="closeVp()" class="text-[#949ba4] hover:text-white">✕</button></div>
   <div class="space-y-3">
    <label class="${FLD_LBL}">Channel name<input id="cf_name" maxlength="30" placeholder="general-chat" class="${FLD_INP}"><span class="block normal-case font-normal text-[#80848e] mt-1">Shown as #<span id="cf_shown"></span></span></label>
@@ -843,7 +922,7 @@ function openChannelForm(id){
   <div class="bc-foot"><button onclick="closeVp()" class="bc-link">Cancel</button><button onclick="saveChannelForm()" class="bg-[#5865f2] hover:bg-[#4752c4] text-white">${c?'Save changes':'Create channel'}</button></div>`;
   const nm=x=>String(x).trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
   $('cf_name').value=c?c.name:'';$('cf_topic').value=c?(c.topic||''):'';$('cf_cat').value=c?(c.category||''):'';
-  $('cf_voice').checked=!!(c&&c.is_voice);$('cf_forum').checked=!!(c&&c.is_forum);$('cf_read').value=String(c?c.min_read_rank||1:1);$('cf_post').value=String(c?c.min_post_rank||1:1);$('cf_slow').value=c?(c.slow_seconds||0):0;
+  $('cf_voice').checked=!!(c&&c.is_voice);$('cf_forum').checked=!!(c&&c.is_forum);$('cf_read').value=c?(c.min_read_role||(c.min_read_rank>=7?'__owner':'')):'';$('cf_post').value=c?(c.min_post_role||(c.min_post_rank>=7?'__owner':'')):'';$('cf_slow').value=c?(c.slow_seconds||0):0;
   const shown=()=>{$('cf_shown').textContent=nm($('cf_name').value)||'channel'};$('cf_name').addEventListener('input',shown);shown();
   $('vp').classList.remove('hidden');setTimeout(()=>$('cf_name').focus(),50);
 }
@@ -852,10 +931,11 @@ async function saveChannelForm(){
   const name=String($('cf_name').value).trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
   if(!name)return msg('Give the channel a name (letters and numbers).');
   const ec=chEditing?channels.find(x=>x.id===chEditing):null;
-  const rdRaw=parseInt($('cf_read').value,10),poRaw=parseInt($('cf_post').value,10);
-  const rd=Number.isNaN(rdRaw)?((ec&&ec.min_read_rank)||1):rdRaw; // a blank box keeps the channel's old setting instead of saving nothing
-  const po=Math.max(Number.isNaN(poRaw)?((ec&&ec.min_post_rank)||1):poRaw,rd);
-  const f={name,topic:$('cf_topic').value.trim(),category:$('cf_cat').value.trim()||null,slow_seconds:Math.max(0,parseInt($('cf_slow').value,10)||0),min_read_rank:rd,min_post_rank:po};
+  const need=v=>v==='__owner'?OWNER_RANK:v?Math.max(1,(croles.find(r=>r.id===v)||{}).position||0):0;
+  const rd=$('cf_read').value;let po=$('cf_post').value;
+  if(need(po)<need(rd))po=rd; // typing needs at least the reading level
+  const f={name,topic:$('cf_topic').value.trim(),category:$('cf_cat').value.trim()||null,slow_seconds:Math.max(0,parseInt($('cf_slow').value,10)||0),
+    min_read_role:rd&&rd!=='__owner'?rd:null,min_read_rank:rd==='__owner'?8:1,min_post_role:po&&po!=='__owner'?po:null,min_post_rank:po==='__owner'?8:1};
   const isVoice=$('cf_voice').checked,isForum=$('cf_forum').checked;
   if(isVoice&&isForum)return msg("A channel can't be both voice and forum.");
   if(isForum||(ec&&ec.is_forum!==undefined))f.is_forum=isForum; // only sent once moderation_and_servers.sql added the column
@@ -874,11 +954,11 @@ document.addEventListener('click',hideCtx);document.addEventListener('keydown',e
 const BEANS=['#e63946','#f4a261','#e9c46a','#2a9d8f','#4cc9f0','#9b5de5','#f15bb5','#80b918','#8d5524'];
 function bean(name){const c=BEANS[[...String(name)].reduce((a,x)=>a+x.charCodeAt(0),0)%BEANS.length];
   return `<svg viewBox="0 0 40 40" class="w-4/5 h-4/5"><ellipse cx="20" cy="20" rx="10.5" ry="15" transform="rotate(35 20 20)" fill="${c}"/><ellipse cx="20" cy="20" rx="10.5" ry="15" transform="rotate(35 20 20)" fill="none" stroke="#000" stroke-opacity=".25" stroke-width="1.5"/><ellipse cx="15" cy="13" rx="2.6" ry="5" transform="rotate(35 15 13)" fill="#fff" opacity=".4"/><circle cx="24" cy="24" r="1" fill="#000" opacity=".2"/><circle cx="21" cy="28" r="1" fill="#000" opacity=".2"/><circle cx="26" cy="19" r="1" fill="#000" opacity=".2"/></svg>`}
-function tag(p,role){const c=p&&cr[p.id];if(c)return `<span class="text-[9px] font-black uppercase px-1.5 rounded text-white" style="background:${esc(c.color)}">${esc(c.name)}</span>`;return `<span class="text-[9px] font-black uppercase text-white px-1.5 rounded ${BADGE[role]}">${role}</span>`}
-let defRole=null;
+function tag(p,role){const c=p&&cr[p.id];if(c)return `<span class="text-[9px] font-black uppercase px-1.5 rounded text-white" style="background:${esc(c.color)}">${esc(c.name)}</span>`;return `<span class="text-[9px] font-black uppercase text-white px-1.5 rounded ${BADGE[role]||BADGE.member}">${role}</span>`}
+let defRole=null,defCr=null,defRk=0; // my role in the main server (set when it is opened)
 const IMGBASE='https://ilmzklhvkacnljfgnxvq.supabase.co/storage/v1/object/public/chat-images/';
 const FILEBASE='https://ilmzklhvkacnljfgnxvq.supabase.co/storage/v1/object/public/chat-files/';
-const canImg=()=>cur.type==='ch'?rank(myRole())>=2:(defRole?rank(defRole)>=2:true);
+const canImg=()=>cur.type==='ch'?myPerm('attach_files'):(defRole?defPerm('attach_files'):true);
 function shrink(f){return new Promise(res=>{if(f.type==='image/gif'||f.size<400000)return res(f);const r=new FileReader();r.onload=()=>{const i=new Image();i.onload=()=>{const k=Math.min(1,1600/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);c.toBlob(b=>res(b),'image/jpeg',0.85)};i.src=r.result};r.readAsDataURL(f)})}
 async function sendImage(f){
   if(!f||!cur.type)return;
@@ -920,14 +1000,14 @@ $('i').addEventListener('paste',e=>{
 let shopTags={},owned=new Set();try{localStorage.removeItem('theme')}catch(e){}
 const chip=t=>`<span class="text-[9px] font-black uppercase px-1.5 rounded" style="background:${esc(t.color)};color:${esc(t.text_color)}">${esc(t.label)}</span>`;
 const MAX_TAGS=2;
-const canNickname=()=>rank(defRole)>=6; // owner and co-owner only
+const canNickname=()=>defPerm('manage_nicknames');
 const equippedIds=p=>(!p?[]:(Array.isArray(p.equipped_tags)&&p.equipped_tags.length?p.equipped_tags:(p.equipped_tag?[p.equipped_tag]:[]))).slice(0,MAX_TAGS);
 const utag=p=>equippedIds(p).map(i=>shopTags[i]).filter(Boolean).map(t=>' '+chip(t)).join('');
 async function loadShopTags(){const {data}=await sb.from('shop_tags').select('*');shopTags={};(data||[]).forEach(t=>shopTags[t.id]=t)}
 async function openShop(){await loadProfiles();await loadShopTags();const {data}=await sb.from('user_tags').select('tag_id');owned=new Set((data||[]).map(x=>x.tag_id));drawShop();$('shop').classList.remove('hidden')}
 function drawShop(){$('bal').textContent='🫘 '+(me.beans??0);$('newtagbtn').classList.add('hidden');
   $('shopg').innerHTML=Object.values(shopTags).sort((a,b)=>a.price-b.price).map(t=>{
-    const eq=equippedIds(me).includes(t.id),has=owned.has(t.id),lock=rank(defRole||'member')<t.min_rank;
+    const eq=equippedIds(me).includes(t.id),has=owned.has(t.id),lock=defRk<(t.min_rank||0);
     const b=(f,l,c)=>`<button ${f} class="px-4 py-1.5 rounded-lg text-xs font-bold ${c}">${l}</button>`;
     const btn=eq?b(`onclick="equip('${t.id}')"`,'Unequip','bg-[#404249] text-white'):has?b(`onclick="equip('${t.id}')"`,'Equip','bg-[#404249] text-white'):lock?b('disabled','🔒 Locked','bg-[#1e1f22] text-[#949ba4] opacity-60'):b(`onclick="buy('${t.id}')"`,'Buy','bg-pink-500 text-white');
     const owner=false;   // tags are created, edited and deleted in Server Settings > Tags
@@ -966,7 +1046,7 @@ async function joinVoiceChannel(id){
   if(groupCallActive&&groupCallId===id)return leaveGroupCall();
   if(groupCallActive)return alert('Leave your current voice call first.');
   if(activeCallWith||callState!=='idle')return alert('You are already on a 1:1 call. Hang up first.');
-  if(rank(myRole())<(c.min_read_rank||1))return alert('You do not have access to this voice channel.');
+  if(!canReadChan(c))return alert('You do not have access to this voice channel.');
   if((voiceRoster[id]||[]).filter(u=>u!==me.id).length>=VOICE_MAX-1)return alert('This voice channel is full ('+VOICE_MAX+' people max).');
   try{groupLocalStream=await navigator.mediaDevices.getUserMedia({audio:true})}
   catch(e){return alert('Could not access your microphone. Check your browser\'s permission settings for this site.')}
@@ -1172,11 +1252,11 @@ async function toggleCamera(){
     await setLocalVideo(vs.getVideoTracks()[0],'camera');
   }catch(e){alert('Could not access your camera. Check your browser\'s permission settings for this site.')}
 }
-const SCREENSHARE_MIN_RANK=2; // 2 = verified and up. Use 3 for mods and up, 1 to let everyone share.
 async function canScreenShare(){
-  let r=defRole;
-  if(!r){try{const ds=(servers||[]).find(x=>x.is_default);if(ds){const {data}=await sb.from('server_members').select('role').eq('server_id',ds.id).eq('user_id',me.id).maybeSingle();r=data&&data.role}}catch(e){}}
-  return rank(r)>=SCREENSHARE_MIN_RANK;
+  if(defRole)return defPerm('screenshare');
+  try{const ds=(servers||[]).find(x=>x.is_default);if(ds){const {data:m}=await sb.from('server_members').select('role,custom_role').eq('server_id',ds.id).eq('user_id',me.id).maybeSingle();
+    if(m){if(m.role==='owner')return true;if(m.custom_role){const {data:r}=await sb.from('custom_roles').select('perms').eq('id',m.custom_role).maybeSingle();return permIn(m.role,r,'screenshare')}}}}catch(e){}
+  return false;
 }
 const shareSmooth=()=>{try{return prefs_.share==='smooth'}catch(e){return false}};
 async function toggleScreenShare(){
@@ -1496,13 +1576,13 @@ async function deleteMe(){const n=(await askText('This permanently deletes your 
 $('mem').addEventListener('contextmenu',e=>{const d=e.target.closest('[data-uid]');if(!d)return;e.preventDefault();const u=d.dataset.uid;let h=mi('','Profile',`showProfile('${u}')`);if(u!==me.id)h+=mi('','Mention',`mentionUser('${u}')`)+mi('','Message',`openDM('${u}')`);
   const staff=[];
   if(u!==me.id&&fr(u)&&fr(u).status==='accepted')staff.push(mi('','Add to group chat',`groupAddMenu('${u}',${e.clientX},${e.clientY})`));
-  if(canNickname()&&u!==me.id&&rank(roles[u])<rank(myRole()))staff.push(mi('','Change nickname',`promptNick('${u}')`));
+  if(canNickname()&&u!==me.id&&rankOf(u)<myRank())staff.push(mi('','Change nickname',`promptNick('${u}')`));
   if(canChangeRole(u))staff.push(mi('','Roles',`openRoleDialog('${u}')`));
   if(staff.length)h+=sep+staff.join('');
   const danger=[];
   if(defRole==='owner'&&u!==me.id)danger.push(mi('','Switch to this account',`switchTo('${u}')`,1));
   if(canResetPw(u))danger.push(mi('','Reset password',`resetPw('${u}')`,1));
-  if(u!==me.id&&(myRole()==='owner'||(myPerm('delete_accounts')&&roles[u]!=='owner'&&rank(roles[u])<effRank())))danger.push(mi('','Delete account',`delAcct('${u}')`,1));
+  if(u!==me.id&&myPerm('delete_accounts')&&roles[u]!=='owner'&&rankOf(u)<myRank())danger.push(mi('','Delete account',`delAcct('${u}')`,1));
   if(danger.length)h+=sep+danger.join('');
   showCtx(e.clientX,e.clientY,h)});
 $('sc').addEventListener('contextmenu',e=>{const d=e.target.closest('[data-friend-uid]');if(!d)return;e.preventDefault();groupAddMenu(d.dataset.friendUid,e.clientX,e.clientY)});
@@ -1549,12 +1629,12 @@ function openTagForm(id){
    <div class="flex gap-6 text-[11px] font-bold uppercase tracking-wide text-[#949ba4]"><label class="flex items-center gap-2">Badge color<input id="tf_color" type="color"></label><label class="flex items-center gap-2">Text color<input id="tf_text" type="color"></label></div>
    <label class="${FLD_LBL}">Description<input id="tf_desc" maxlength="80" placeholder="What this tag is for" class="${FLD_INP}"></label>
    <div class="flex gap-3"><label class="${FLD_LBL} flex-1">Price (beans)<input id="tf_price" type="number" min="1" step="1" inputmode="numeric" class="${FLD_INP}"></label>
-   <label class="${FLD_LBL} flex-1">Who can buy it<select id="tf_min" class="${FLD_INP}"><option value="1">Everyone</option><option value="2">Verified and up</option><option value="3">Mods and up</option></select></label></div>
+   <label class="${FLD_LBL} flex-1">Who can buy it<select id="tf_min" class="${FLD_INP}"><option value="0">Everyone</option>${[...croles].sort((a,b)=>(a.position||0)-(b.position||0)).map(r=>`<option value="${r.position||0}">${esc(r.name)} and up</option>`).join('')}<option value="${OWNER_RANK}">Owner only</option></select></label></div>
   </div>
   <div id="tf_msg" class="text-xs text-[#f23f43] mt-3 min-h-[1rem]"></div>
   <div class="flex gap-2 mt-2"><button onclick="saveTagForm()" class="flex-1 bg-[#23a55a] hover:bg-[#1a8044] text-white py-2 rounded-lg text-sm font-semibold">${t?'Save changes':'Create tag'}</button><button onclick="closeVp()" class="flex-1 bg-[#4e5058] hover:bg-[#5d6068] text-white py-2 rounded-lg text-sm">Cancel</button></div>`;
   $('tf_label').value=t?t.label:'';$('tf_color').value=t?t.color:'#5865f2';$('tf_text').value=t?t.text_color:'#ffffff';
-  $('tf_desc').value=t?(t.description||''):'';$('tf_price').value=t?t.price:300;$('tf_min').value=t?String(t.min_rank):'1';
+  $('tf_desc').value=t?(t.description||''):'';$('tf_price').value=t?t.price:300;{const v=String(t?(t.min_rank||0):0);if(![...$('tf_min').options].some(o=>o.value===v)){const o=document.createElement('option');o.value=v;o.textContent='Rank '+v+' and up';$('tf_min').appendChild(o)}$('tf_min').value=v}
   ['tf_label','tf_color','tf_text'].forEach(k=>$(k).addEventListener('input',tagPreview));
   tagPreview();$('vp').classList.remove('hidden');
   setTimeout(()=>{const i=$(t?'tf_label':'tf_id');if(i)i.focus()},50);
@@ -1597,7 +1677,7 @@ async function togglePins(){
   if(cur.type!=='ch')return;
   const {data,error}=await sb.from('messages').select('*').eq('channel_id',cur.id).eq('pinned',true).order('created_at');
   if(error)return alert(error.message);
-  const canMod=rank(myRole())>=4;
+  const canMod=myPerm('manage_messages');
   const item=m=>{const p=profiles[m.sender_id]||{username:'?'};
     return `<div class="rounded-xl bg-black/20 p-3 text-sm"><div class="flex items-center gap-2"><b style="color:${col(p)}">${esc(dn(p))}</b><span class="text-[10px] text-[#949ba4]">${new Date(m.created_at).toLocaleString()}</span></div><p class="mt-1 break-words whitespace-pre-wrap">${esc(plainText(m.content))}</p>${canMod?`<div class="mt-2 flex gap-2"><button onclick="pinAction('${m.id}','unpin')" class="pbtn">Unpin</button><button onclick="pinAction('${m.id}','delete')" class="pbtn danger">Delete message</button></div>`:''}</div>`};
   $('vpc').innerHTML=`<div class="flex items-center justify-between mb-3"><h3 class="font-bold text-white">📌 Pinned messages</h3><button onclick="closeVp()" class="text-[#949ba4] hover:text-white">✕</button></div><div class="text-left space-y-3 max-h-[60vh] overflow-y-auto">${data.length?data.map(item).join(''):'<p class="text-xs text-[#949ba4]">No pinned messages yet.</p>'}</div>`;
@@ -1637,23 +1717,20 @@ setInterval(()=>{if(!document.hidden&&me)touchSeen()},60000);
 
 
 // ===== custom roles: the manager lives in settingshub.js (Server Settings > Roles) =====
-const PERMS=[['manage_channels','Manage Channels','Create, edit, reorder and delete channels'],['manage_messages','Manage Messages','Pin messages and delete other members\' messages'],['kick_members','Kick Members','Remove members ranked below this role'],['ban_members','Ban Members','Ban members ranked below this role'],['timeout_members','Timeout Members','Mute members ranked below this role'],['view_audit_log','View Audit Log','See the server\'s history of bans, kicks and role changes'],['manage_roles','Manage Roles','Create, edit, reorder and delete roles (can only hand out permissions they have themselves)'],['delete_accounts','Delete Accounts','Permanently delete accounts of members ranked below them. Cannot be undone'],['attach_files','Attach Files','Send images and files in chat']];
+const PERMS=[['manage_channels','Manage Channels','Create, edit, reorder and delete channels'],['manage_messages','Manage Messages','Pin messages and delete other members\' messages'],['kick_members','Kick Members','Remove members ranked below this role'],['ban_members','Ban Members','Ban members ranked below this role'],['timeout_members','Timeout Members','Mute members ranked below this role'],['view_audit_log','View Audit Log','See the server\'s history of bans, kicks and role changes'],['manage_roles','Manage Roles','Create, edit, reorder and delete roles (can only hand out permissions they have themselves)'],['delete_accounts','Delete Accounts','Permanently delete accounts of members ranked below them. Cannot be undone'],['attach_files','Attach Files','Send images and files in chat'],['manage_server','Manage Server','Welcome and goodbye messages, announcements, bold posts, bot commands, webhooks and the other server settings'],['screenshare','Share Screen','Share their screen in voice calls'],
+['ban_ips','Ban IPs','Ban an account\'s IP address (people ranked below them)'],['ban_devices','Ban Devices','Ban and unban a person\'s devices'],['view_ips','View IPs','See IP addresses, logins and linked accounts (/ips, /alts, /iplog)'],['manage_nicknames','Change Nicknames','Change other people\'s nicknames and their own'],['manage_words','Manage Blocked Words','Add and remove blocked words'],['manage_automod','Manage Auto-mod','Change the auto-mod settings'],['manage_shop','Manage Shop','Create, edit and delete shop tags']];
 // renderPermChecks lives in settingshub.js
 function toggleAdminPerm(){
   const on=$('rf_admin').checked;
-  $('rf_perms').querySelectorAll('input[type=checkbox]').forEach(c=>{c.disabled=on;if(on)c.checked=true});
+  $('rf_perms').querySelectorAll('input[type=checkbox]').forEach(c=>{if(OWNER_LEVEL_PERMS.includes(c.dataset.perm))return;c.disabled=on;if(on)c.checked=true}); // owner-level ones are never covered by Administrator
 }
 function readPermChecks(){
   const o={};PERMS.forEach(([k])=>{const el=$('rf_perms').querySelector(`[data-perm="${k}"]`);if(el&&el.checked)o[k]=true});
   if($('rf_admin').checked)o.administrator=true;
   return o;
 }
-const effRank=()=>Math.max(rank(myRole()),cr[me.id]&&cr[me.id].base?rank(cr[me.id].base):0);
-function myPerm(key){if(myRole()==='alter'&&(key==='manage_roles'||key==='delete_accounts'))return true; // the Alter tier always has these two
-  const c=cr[me.id];return !!(c&&c.perms&&(c.perms[key]||c.perms.administrator))}
 function banHtml(){if(!isStaff()||!bans.length)return '';return '<div class="text-[11px] font-bold text-[#949ba4] uppercase mt-4 mb-2">Banned — '+bans.length+'</div>'+bans.map(b=>`<div class="flex justify-between text-xs py-1"><span>${esc((profiles[b.user_id]||{username:'?'}).username)}</span><button onclick="unbanFromList('${b.user_id}')" class="text-[#949ba4] hover:text-white">Unban</button></div>`).join('')}
 async function unbanFromList(uid){const {error}=await sb.rpc('punish',{uid,kind:'ban',mins:0});if(error)return alert(error.message);await openServer(srvId)}
-async function setBuiltinRole(uid,newrole){const {error}=await sb.rpc('set_builtin_role',{sid:srvId,uid,newrole});if(error)return alert(error.message);await openServer(srvId)}
 
 function groupAddMenu(uid,x,y){
   const p=profiles[uid]||{username:'?'};
@@ -1995,10 +2072,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('web').classList
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
 
 // ===== staff role changing, username/password changer, reset password =====
-const RESET_MIN_RANK=8; // 8 = owner only. Must match RESET_MIN_RANK in the account-tools edge function.
 const USERNAME_COOLDOWN_DAYS=7;
-const canChangeRole=u=>!!srvId&&u!==me.id&&rank(myRole())>=4&&rank(roles[u])<rank(myRole())&&roles[u]!=='owner';
-const canResetPw=u=>u!==me.id&&rank(myRole())>=RESET_MIN_RANK&&rank(roles[u])<rank(myRole());
+const canChangeRole=u=>!!srvId&&u!==me.id&&myPerm('manage_roles')&&rankOf(u)<myRank()&&roles[u]!=='owner';
+const canResetPw=u=>u!==me.id&&myRole()==='owner'&&rankOf(u)<myRank(); // owner only (the account-tools edge function checks the same)
 async function toolsCall(body){
   const {data,error}=await sb.functions.invoke('account-tools',{body});
   if(error){let m=error.message;try{const j=await error.context.json();if(j&&j.error)m=j.error}catch(e){}throw new Error(m)}
@@ -2016,12 +2092,11 @@ function closeOverlay(){const d=$('bc_overlay');if(d)d.remove()}
 
 function openRoleDialog(uid){
   if(!canChangeRole(uid))return;
-  const p=profiles[uid]||{username:'?'},m=members.find(x=>x.user_id===uid)||{},mine=rank(myRole());
+  const p=profiles[uid]||{username:'?'},m=members.find(x=>x.user_id===uid)||{},mine=myRank();
   const row=(on,fn,dot,label)=>`<button onclick="${fn}" class="w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg text-sm ${on?'bg-[#5865f2] text-white font-bold':'bg-[#1e1f22] text-[#dbdee1] hover:bg-[#35373c]'}"><span class="w-3 h-3 rounded-full flex-shrink-0" style="background:${dot}"></span>${label}${on?' (current)':''}</button>`;
-  const list=croles.filter(r=>rank(r.base)<mine).sort((x,y)=>(y.position||0)-(x.position||0));
+  const list=croles.filter(r=>(r.position||0)<mine).sort((x,y)=>(y.position||0)-(x.position||0));
   const custom=list.map(r=>row(r.id===m.custom_role,`giveRoleTo('${uid}','${r.id}')`,esc(r.color),esc(r.name))).join('')+(m.custom_role?`<button onclick="giveRoleTo('${uid}',null)" class="w-full text-left px-3 py-2 rounded-lg text-sm text-[#f23f43] bg-[#1e1f22] hover:bg-[#35373c]">Remove role</button>`:'');
-  const built=(typeof SH_BUILTIN!=='undefined'?SH_BUILTIN:[]).filter(b=>b.assign&&rank(b.k)<mine).map(b=>row(m.role===b.k,`staffSetRole('${uid}','${b.k}')`,b.color,b.name)).join('');
-  overlay(`<div class="flex justify-between items-center mb-3"><h2 class="font-bold text-white">Roles: ${esc(dn(p))}</h2><button onclick="closeOverlay()" class="text-[#949ba4] hover:text-white">✕</button></div>${built?`<div class="text-[11px] font-bold uppercase tracking-wide text-[#949ba4] mb-1.5">Staff ranks</div><div class="space-y-1.5 mb-3">${built}</div>`:''}<div class="text-[11px] font-bold uppercase tracking-wide text-[#949ba4] mb-1.5">Custom roles</div><div class="space-y-1.5">${custom||'<div class="text-sm text-[#949ba4]">No custom roles yet. Create them in Server Settings → Roles.</div>'}</div>`);
+  overlay(`<div class="flex justify-between items-center mb-3"><h2 class="font-bold text-white">Roles: ${esc(dn(p))}</h2><button onclick="closeOverlay()" class="text-[#949ba4] hover:text-white">✕</button></div><div class="space-y-1.5">${custom||'<div class="text-sm text-[#949ba4]">No custom roles yet. Create them in Server Settings → Roles.</div>'}</div>`);
 }
 async function giveRoleTo(uid,rid){const {error}=await sb.rpc('give_role',{sid:srvId,uid,rid});if(error)alert(error.message);closeOverlay();await openServer(srvId)}
 
