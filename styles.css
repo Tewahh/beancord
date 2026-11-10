@@ -517,3 +517,14 @@ html body #ctx{max-height:min(80vh,calc(100dvh - 16px));overflow-y:auto}
 /* hidden buttons stay hidden: the #ch button rule above forces display, which made DM-only buttons (call, voice, group settings) and the mobile-only members button show everywhere */
 html body #ch button.hidden{display:none}
 @media (min-width:768px){html body #ch #membtn{display:none}}
+
+/* ---- avatar decorations ---- */
+.dec{position:relative;display:inline-flex;flex-shrink:0;border-radius:9999px}
+.dec-ring{box-shadow:0 0 0 2px var(--d1),0 0 0 4px var(--d2)}
+.dec-glow{box-shadow:0 0 8px 2px var(--d1),0 0 18px 4px var(--d2)}
+.dec-pulse{animation:decpulse 1.6s ease-in-out infinite}
+@keyframes decpulse{0%,100%{box-shadow:0 0 4px 1px var(--d1)}50%{box-shadow:0 0 14px 5px var(--d2)}}
+.dec-spin::after,.dec-rainbow::after{content:'';position:absolute;inset:-4px;border-radius:50%;pointer-events:none;background:conic-gradient(var(--d1),var(--d2),var(--d1));-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2px));mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2px));animation:decrot 3s linear infinite}
+.dec-rainbow::after{background:conic-gradient(#ff3b3b,#ffb02e,#f4ff3b,#3bff6f,#3bd5ff,#6b3bff,#ff3bd5,#ff3b3b)}
+@keyframes decrot{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.dec,.dec::after{animation:none !important}}

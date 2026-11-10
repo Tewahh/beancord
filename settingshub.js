@@ -1,7 +1,8 @@
 // ===== Server Settings: ONE Discord-style dialog for roles, channels and every server tool. Loaded after servertools.js. =====
 // Replaces the old ⚙ roles popup, 🛡 server-tools popup and the + new-channel button.
 
-const canSettings=()=>isStaff()||myPerm('manage_roles')||myPerm('manage_channels');
+const canSettings=()=>isStaff()||myPerm('manage_roles')||myPerm('manage_channels')||shCanFeedback();
+const shCanFeedback=()=>defRole==='owner'||defPerm('view_feedback');
 const shCanLists=()=>defRole==='owner'||defPerm('manage_server'); // the command table and the bot / hidden lists
 let shPage=null,rfEditing=null,shRoleFor=null;
 
@@ -12,11 +13,11 @@ function shPages(){
   const roleOk=defRole==='owner'||myPerm('manage_roles');
   return [
     {g:(servers.find(x=>x.id===srvId)||{}).name||'Server',items:[{k:'overview',ic:'⚙',t:'Overview',ok:true}]},
-    {g:'People',items:[{k:'roles',ic:'🛡',t:'Roles',ok:roleOk},{k:'tags',ic:'🏷',t:'Tags',ok:def&&(defRole==='owner'||defPerm('manage_shop'))},{k:'audit',ic:'📋',t:'Audit Log',ok:staff||myPerm('view_audit_log')}]},
+    {g:'People',items:[{k:'roles',ic:'🛡',t:'Roles',ok:roleOk},{k:'tags',ic:'🏷',t:'Tags',ok:def&&(defRole==='owner'||defPerm('manage_shop'))},{k:'decor',ic:'✨',t:'Decorations',ok:def&&(defRole==='owner'||defPerm('manage_shop'))},{k:'audit',ic:'📋',t:'Audit Log',ok:staff||myPerm('view_audit_log')}]},
     {g:'Channels',items:[{k:'channels',ic:'#',t:'Channels',ok:staff||myPerm('manage_channels')}]},
     {g:'Moderation',items:[{k:'rules',ic:'📜',t:'Welcome & Rules',ok:staff},{k:'automod',ic:'🤖',t:'Auto-mod',ok:staff&&def},{k:'words',ic:'🚫',t:'Blocked Words',ok:staff&&def}]},
     {g:'Integrations',items:[{k:'hooks',ic:'🔗',t:'Webhooks',ok:staff}]},
-    {g:'Bot & site',items:[{k:'commands',ic:'⌨',t:'Commands',ok:def&&shCanLists()},{k:'lists',ic:'📃',t:'Bots & Lists',ok:def&&shCanLists()}]},
+    {g:'Bot & site',items:[{k:'commands',ic:'⌨',t:'Commands',ok:def&&shCanLists()},{k:'lists',ic:'📃',t:'Bots & Lists',ok:def&&shCanLists()},{k:'feedback',ic:'💡',t:'Feedback',ok:def&&shCanFeedback()}]},
   ].map(s=>({...s,items:s.items.filter(i=>i.ok)})).filter(s=>s.items.length);
 }
 
@@ -41,7 +42,7 @@ function shDraw(){
   const cur=all.find(i=>i.k===shPage);
   $('sx_t').textContent=cur.t;
   const b=$('sx_b');b.className='';b.onclick=null;delete b.dataset.editing;
-  ({overview:shOverview,roles:shRoles,tags:shTags,audit:shAudit,channels:shChannels,rules:tvRules,automod:tvAutomod,words:tvWords,hooks:tvHooks,commands:shCommands,lists:shLists})[shPage](b);
+  ({overview:shOverview,roles:shRoles,tags:shTags,audit:shAudit,channels:shChannels,rules:tvRules,automod:tvAutomod,words:tvWords,hooks:tvHooks,commands:shCommands,lists:shLists,feedback:shFeedback,decor:shDecor})[shPage](b);
   const m=$('sx').querySelector('.sx-main');if(m)m.scrollTop=0;
 }
 
@@ -247,3 +248,63 @@ async function shListDel(key,u){
   if(key==='bots'){BOT_NAMES=BOT_NAMES.filter(x=>x!==u);if(!BOT_NAMES.length)BOT_NAMES=['beanbot']}
   shDraw();
 }
+
+
+// ---------- Feedback inbox: suggestions, emoji ideas and bug reports ----------
+let fbFilter={kind:'',status:''};
+async function shFeedback(b){
+  b.innerHTML='<div class="sx-sub">Loading…</div>';
+  const {data,error}=await sb.from('feedback').select('*').order('created_at',{ascending:false}).limit(150);
+  if(error){b.innerHTML=shEmpty('Feedback is not set up yet.<br>Run <b>setup/feedback.sql</b> in Supabase first.');return}
+  const rows=(data||[]).filter(r=>(!fbFilter.kind||r.kind===fbFilter.kind)&&(!fbFilter.status||r.status===fbFilter.status));
+  const sel=(id,cur,opts)=>`<select id="${id}" class="sx-in" style="width:auto;margin:0;font-size:14px">${opts.map(([v,l])=>`<option value="${v}" ${v===cur?'selected':''}>${l}</option>`).join('')}</select>`;
+  b.innerHTML=`<div class="sx-sub" style="margin-bottom:10px">What people sent through <b>Feedback</b>. Only you and roles with the View Feedback permission can see this.</div>
+   <div class="sx-bar" style="margin-bottom:12px">${sel('fb_fk',fbFilter.kind,[['','All types'],...Object.entries(FB_KIND).map(([k,v])=>[k,v[0]+' '+v[1]])])}${sel('fb_fs',fbFilter.status,[['','Any status'],...Object.entries(FB_STATUS).map(([k,v])=>[k,v[0]+' '+v[1]])])}<span class="sx-sub" style="margin-left:auto">${rows.length} shown</span></div>`+
+   (rows.length?rows.map(r=>{const p=profiles[r.user_id];return `<div class="sx-row" style="align-items:flex-start"><div class="sx-grow"><div class="sx-nm">${FB_KIND[r.kind][0]} ${esc(FB_KIND[r.kind][1])} <span class="sx-sub">from ${p?esc(dn(p)):'someone'} · ${new Date(r.created_at).toLocaleString()}</span></div>
+     <div style="white-space:pre-wrap;margin:6px 0 8px;word-break:break-word">${esc(r.body)}</div>
+     <div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries(FB_STATUS).map(([k,v])=>`<button class="sx-btn" ${k===r.status?'style="outline:2px solid #ff6b8a"':''} onclick="shFbSet('${r.id}','${k}')">${v[0]} ${v[1]}</button>`).join('')}${shBtn('Delete',`shFbDel('${r.id}')`,'red')}</div></div></div>`}).join(''):shEmpty('Nothing here yet.'));
+  $('fb_fk').onchange=e=>{fbFilter.kind=e.target.value;shFeedback(b)};$('fb_fs').onchange=e=>{fbFilter.status=e.target.value;shFeedback(b)};
+}
+async function shFbSet(id,status){const {error}=await sb.from('feedback').update({status}).eq('id',id);if(error)return toast(error.message,true);shFeedback($('sx_b'))}
+async function shFbDel(id){if(!(await askConfirm('Delete this one?')))return;const {error}=await sb.from('feedback').delete().eq('id',id);if(error)return toast(error.message,true);shFeedback($('sx_b'))}
+
+
+// ---------- Decorations: rings, glows and spinning borders for profile pictures, sold in the Shop ----------
+const DEC_KINDS={ring:'Double ring',glow:'Soft glow',pulse:'Pulsing glow',spin:'Spinning ring (two colors)',rainbow:'Spinning rainbow'};
+let dcEditing=null;
+async function shDecor(b){
+  await loadShopDecor();
+  const list=Object.values(shopDecor).sort((a,c)=>a.price-c.price),d=dcEditing?shopDecor[dcEditing]:null;
+  const kinds=Object.entries(DEC_KINDS).map(([k,l])=>`<option value="${k}">${l}</option>`).join('');
+  b.innerHTML=`<div class="sx-sub" style="margin-bottom:10px">Make a decoration here, then people buy it in the Shop with beans and wear it around their profile picture.</div>
+   <div class="sx-sec">${d?'Edit decoration':'New decoration'}</div>
+   <div style="display:flex;gap:18px;align-items:center;margin-bottom:10px"><div id="dc_prev" style="padding:10px 16px"></div>
+    <div style="flex:1;min-width:200px">
+     ${d?'':`<input id="dc_id" class="sx-in" maxlength="16" placeholder="short id, e.g. fire (lowercase letters and numbers)" autocomplete="off">`}
+     <input id="dc_name" class="sx-in" maxlength="24" placeholder="Name" autocomplete="off">
+     <select id="dc_kind" class="sx-in">${kinds}</select>
+     <div style="display:flex;gap:16px;align-items:center;margin:6px 0" class="sx-sub"><label>Color 1 <input id="dc_c1" type="color"></label><label>Color 2 <input id="dc_c2" type="color"></label></div>
+     <input id="dc_price" class="sx-in" type="number" min="1" placeholder="Price in beans">
+     <input id="dc_desc" class="sx-in" maxlength="60" placeholder="Short description (optional)" autocomplete="off">
+    </div></div>
+   <div id="dc_msg" class="sx-sub" style="color:#f23f43;min-height:16px"></div>
+   <div class="sx-bar" style="margin-bottom:14px">${shBtn(d?'Save changes':'Create decoration','shDecSave()','blue')}${d?shBtn('Cancel','dcEditing=null;shDecor($("sx_b"))'):''}</div>
+   <div class="sx-sec">Decorations (${list.length})</div>`+
+   (list.length?list.map(x=>`<div class="sx-row"><div style="padding:6px 12px">${av({...me,equipped_decor:x.id},9)}</div><div class="sx-grow"><div class="sx-nm">${esc(x.name)} <span class="sx-sub">${esc(DEC_KINDS[x.kind]||x.kind)} · 🫘 ${x.price}</span></div><div class="sx-sub">${esc(x.description||'')}</div></div>${shBtn('Edit',`dcEditing='${x.id}';shDecor($('sx_b'))`)}${shBtn('Delete',`shDecDel('${x.id}')`,'red')}</div>`).join(''):shEmpty('No decorations yet.'));
+  $('dc_name').value=d?d.name:'';$('dc_kind').value=d?d.kind:'ring';$('dc_c1').value=d?d.c1:'#ff4fa3';$('dc_c2').value=d?d.c2:'#7fdcff';$('dc_price').value=d?d.price:500;$('dc_desc').value=d?(d.description||''):'';
+  const pv=()=>{$('dc_prev').innerHTML=av({...me,equipped_decor:'__p'},16);delete shopDecor.__p};
+  const draw=()=>{shopDecor.__p={kind:$('dc_kind').value,c1:$('dc_c1').value,c2:$('dc_c2').value};pv()};
+  ['dc_kind','dc_c1','dc_c2'].forEach(k=>$(k).addEventListener('input',draw));draw();
+}
+async function shDecSave(){
+  const msg=t=>{$('dc_msg').textContent=t};
+  const id=dcEditing||($('dc_id')||{value:''}).value.trim().toLowerCase();
+  if(!dcEditing&&!/^[a-z0-9]{1,16}$/.test(id))return msg('The id needs lowercase letters and numbers only.');
+  if(!dcEditing&&shopDecor[id])return msg('That id is taken.');
+  const name=$('dc_name').value.trim();if(!name)return msg('Give it a name.');
+  const price=parseInt($('dc_price').value,10);if(!(price>=1))return msg('The price must be 1 bean or more.');
+  const {error}=await sb.rpc('upsert_shop_decor',{did:id,dname:name,dkind:$('dc_kind').value,dc1:$('dc_c1').value,dc2:$('dc_c2').value,dprice:price,ddesc:$('dc_desc').value.trim()});
+  if(error)return msg(/upsert_shop_decor|shop_decor/.test(error.message)&&!/permission/i.test(error.message)?'Run decorations.sql in Supabase first.':error.message);
+  dcEditing=null;toast('Saved');shDecor($('sx_b'));
+}
+async function shDecDel(id){if(!(await askConfirm('Delete this decoration? Everyone who owns or wears it loses it.')))return;const {error}=await sb.rpc('delete_shop_decor',{did:id});if(error)return toast(error.message,true);await loadProfiles();shDecor($('sx_b'))}

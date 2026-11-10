@@ -126,7 +126,7 @@ const OWNER_RANK=1e6;
 const rankOf=u=>roles[u]==='owner'?OWNER_RANK:(cr[u]?Math.max(1,cr[u].position||0):0);
 const myRank=()=>rankOf(me.id);
 // "Administrator" covers every permission except these, which have to be ticked one by one (same list as bc_owner_level_perms() in the database)
-const OWNER_LEVEL_PERMS=['ban_ips','ban_devices','manage_nicknames','manage_automod','view_ips','manage_words','manage_shop'];
+const OWNER_LEVEL_PERMS=['ban_ips','ban_devices','manage_nicknames','manage_automod','view_ips','manage_words','manage_shop','view_feedback'];
 const permIn=(role,c,k)=>role==='owner'||!!(c&&c.perms&&(c.perms[k]||(c.perms.administrator&&!OWNER_LEVEL_PERMS.includes(k))));
 const myPerm=k=>permIn(myRole(),cr[me.id],k);       // in the server that is open
 const defPerm=k=>permIn(defRole,defCr,k);            // in the main server
@@ -188,7 +188,7 @@ async function start(){
   try{const dv=await getDeviceIds();await sb.rpc('bc_register_device',{hw:dv.h,dev:dv.d})}catch(e){}
   try{const dv=await getDeviceIds();const {data:devBanned,error:devErr}=await sb.rpc('register_device',{h:dv.h,d:dv.d});if(!devErr&&devBanned===true)return kickDevice()}catch(e){}
   pushRebind();
-  await loadFriends();await loadBlocks();await loadShopTags();await loadSiteLists();await loadChanMap();drawMeBox();
+  await loadFriends();await loadBlocks();await loadDmPrefs();await loadShopTags();await loadShopDecor();await loadSiteLists();await loadChanMap();drawMeBox();
   await loadGroups();await loadUnread();await loadServers();await redeemInvite();loadCustomEmoji();const d=servers.find(x=>x.is_default);if(_inviteOpen)openServer(_inviteOpen);else if(d)openServer(d.id);else showDMs();listen();track();loadTurn();initExtras();
 }
 async function loadServers(){const {data}=await sb.from('servers').select('*').order('created_at');servers=data||[];drawServerNav()}
@@ -217,7 +217,7 @@ function drawMembers(){
   const def=(servers.find(x=>x.id===srvId)||{}).is_default;
   const b=(t,fn)=>`<button onclick="${fn}" class="hover:text-[#f23f43]">${t}</button>`;
   const groupsMap={};
-  members.forEach(m=>{
+  (prefs_.hideOff?members.filter(m=>m.user_id===me.id||online.has(m.user_id)):members).forEach(m=>{
     const custom=m.custom_role?croles.find(r=>r.id===m.custom_role):null;
     const key=custom?('c_'+custom.id):('b_'+m.role);
     if(!groupsMap[key])groupsMap[key]={key,label:custom?custom.name:m.role.charAt(0).toUpperCase()+m.role.slice(1),color:custom?custom.color:null,rankVal:custom?(custom.position||0):(m.role==='owner'?OWNER_RANK:0),pos:0,items:[]};
@@ -289,6 +289,43 @@ async function showDMs(){
   srvId=null;members=[];roles={};$('mem').classList.add('hidden');await loadProfiles(600000);await loadFriends();await loadGroups();await loadServers();cur={};$('sh').innerHTML='<span class="truncate">Direct Messages</span><span class="flex items-center gap-2 flex-shrink-0"><button onclick="openWeb()" title="Beanchat — search the web" class="text-base text-[#949ba4] hover:text-white">🫘</button></span>';$('chtitle').textContent='Pick someone to message';$('msgs').innerHTML='';$('pinbtn').classList.add('hidden');$('searchbtn').classList.add('hidden');$('searchbar').classList.add('hidden');$('callbtn').classList.add('hidden');$('groupcallbtn').classList.add('hidden');$('groupsettingsbtn').classList.add('hidden');subscribeTyping();
   drawPeople();
 }
+// ===== favourites + categories for the friends / group chat list =====
+let dmPrefs={};
+const _dmClosed=(()=>{try{return new Set(JSON.parse(localStorage.getItem('bc_dmcat_closed')||'[]'))}catch(e){return new Set()}})();
+async function loadDmPrefs(){try{const {data}=await sb.from('dm_prefs').select('*').eq('user_id',me.id);dmPrefs={};(data||[]).forEach(r=>dmPrefs[r.target]={fav:!!r.fav,cat:r.category||null})}catch(e){}}
+const dmCats=()=>[...new Set(Object.values(dmPrefs).map(v=>v.cat).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+const dmSections_on=()=>friendTab==='online'||friendTab==='all';
+const dmPlaced=id=>dmSections_on()&&!!dmPrefs[id]&&(dmPrefs[id].fav||!!dmPrefs[id].cat);
+async function dmSet(t,patch){
+  const c=Object.assign({fav:false,cat:null},dmPrefs[t],patch);let error;
+  if(!c.fav&&!c.cat){delete dmPrefs[t];({error}=await sb.from('dm_prefs').delete().eq('user_id',me.id).eq('target',t))}
+  else{dmPrefs[t]=c;({error}=await sb.from('dm_prefs').upsert({user_id:me.id,target:t,fav:c.fav,category:c.cat}))}
+  if(error){await loadDmPrefs();alert(/dm_prefs/.test(error.message)?'Run dm_prefs.sql in Supabase first.':error.message)}
+  if(!srvId)drawPeople()}
+const dmFav=id=>dmSet(id,{fav:!(dmPrefs[id]&&dmPrefs[id].fav)});
+async function dmNewCat(id){const n=await askText('New category name');if(!n||!n.trim())return;dmSet(id,{cat:n.trim().slice(0,24)})}
+function dmMenu(e,id){e.preventDefault();e.stopPropagation();const p=dmPrefs[id]||{},cats=dmCats();
+  let h=mi(p.fav?'☆':'⭐',p.fav?'Remove from favorites':'Add to favorites',`dmFav('${id}')`)+sep;
+  h+=cats.map((c,i)=>mi(p.cat===c?'✓':'📁',esc(c),`dmSet('${id}',{cat:dmCats()[${i}]})`)).join('')+mi('＋','New category…',`dmNewCat('${id}')`);
+  if(p.cat)h+=sep+mi('✕','Remove from category',`dmSet('${id}',{cat:null})`,1);
+  showCtx(e.clientX,e.clientY,h);return false}
+function toggleCat(i){const c=dmCats()[i];if(!c)return;_dmClosed.has(c)?_dmClosed.delete(c):_dmClosed.add(c);try{localStorage.setItem('bc_dmcat_closed',JSON.stringify([..._dmClosed]))}catch(e){}drawPeople()}
+function catMenu(e,i){e.preventDefault();e.stopPropagation();showCtx(e.clientX,e.clientY,mi('✎','Rename category',`renameCat(${i})`)+mi('🗑','Delete category',`delCat(${i})`,1));return false}
+async function renameCat(i){const c=dmCats()[i];if(!c)return;const n=await askText('Category name',c);if(!n||!n.trim()||n.trim()===c)return;
+  const {error}=await sb.from('dm_prefs').update({category:n.trim().slice(0,24)}).eq('user_id',me.id).eq('category',c);if(error)alert(error.message);await loadDmPrefs();drawPeople()}
+async function delCat(i){const c=dmCats()[i];if(!c)return;if(!(await askConfirm('Delete the category "'+c+'"? Your chats stay, they just go back to the main list.')))return;
+  await sb.from('dm_prefs').update({category:null}).eq('user_id',me.id).eq('category',c);await sb.from('dm_prefs').delete().eq('user_id',me.id).eq('fav',false).is('category',null);await loadDmPrefs();drawPeople()}
+const _starBtn=id=>`<span onclick="event.stopPropagation();dmFav('${id}')" title="${dmPrefs[id]&&dmPrefs[id].fav?'Unfavorite':'Favorite'}" class="text-xs px-1 ${dmPrefs[id]&&dmPrefs[id].fav?'':'text-[#80848e] hover:text-[#f0b232]'}">${dmPrefs[id]&&dmPrefs[id].fav?'⭐':'☆'}</span>`;
+function friRow(p,nmx){return `<button data-friend-uid="${p.id}" onclick="openDM('${p.id}')" oncontextmenu="return dmMenu(event,'${p.id}')" class="w-full flex justify-between items-center px-2 py-2 rounded-md text-sm ${cur.id===p.id?'bg-[#404249] text-white':'text-[#949ba4] hover:bg-[#35373c]'}">${nmx(p)}<span class="flex items-center gap-1">${unread[p.id]?`<span class="bg-[#f23f43] text-white text-[10px] font-black px-2 rounded-full">${unread[p.id]}</span>`:''}${_starBtn(p.id)}<span onclick="event.stopPropagation();removeFriend('${p.id}')" title="Remove friend" class="text-[#80848e] hover:text-[#f23f43] text-xs px-1">✕</span></span></button>`}
+function grpRow(g){const mnames=g.members.filter(id=>id!==me.id).map(id=>dn(profiles[id]||{username:'?'})).join(', ');
+  return `<button onclick="openGroup('${g.id}')" oncontextmenu="return dmMenu(event,'${g.id}')" class="w-full flex justify-between items-center px-2 py-2 rounded-md text-sm ${cur.type==='group'&&cur.id===g.id?'bg-[#404249] text-white':'text-[#949ba4] hover:bg-[#35373c]'}"><span class="truncate">👥 ${esc(g.name)}<span class="block text-[10px] text-[#80848e] truncate font-normal">${esc(mnames)}</span></span><span class="flex items-center gap-1 flex-shrink-0">${unread[g.id]?`<span class="bg-[#f23f43] text-white text-[10px] font-black px-2 rounded-full">${unread[g.id]}</span>`:''}${_starBtn(g.id)}</span></button>`}
+function dmSections(fri,nmx){if(!dmSections_on())return '';
+  const by={};const order=[];fri.forEach(p=>{by[p.id]=friRow(p,nmx);order.push(p.id)});groups.forEach(g=>{by[g.id]=grpRow(g);order.push(g.id)});
+  const hd=(t,n,i)=>`<div ${i>=0?`onclick="toggleCat(${i})" oncontextmenu="return catMenu(event,${i})"`:''} class="text-[11px] font-bold text-[#949ba4] uppercase px-2 pt-3 pb-1 ${i>=0?'cursor-pointer select-none hover:text-white':''}">${i>=0?(_dmClosed.has(dmCats()[i])?'▸ ':'▾ ')+'📁 ':''}${esc(t)} — ${n}</div>`;
+  const favs=order.filter(id=>dmPrefs[id]&&dmPrefs[id].fav);
+  let h=favs.length?hd('⭐ Favorites',favs.length,-1)+favs.map(id=>by[id]).join(''):'';
+  dmCats().forEach((c,i)=>{const ids=order.filter(id=>dmPrefs[id]&&!dmPrefs[id].fav&&dmPrefs[id].cat===c);if(!ids.length)return;h+=hd(c,ids.length,i)+(_dmClosed.has(c)?'':ids.map(id=>by[id]).join(''))});
+  return h}
 function drawPeople(){
   const others=Object.values(profiles).filter(p=>p.id!==me.id),F=p=>fr(p.id);
   const inc=others.filter(p=>F(p)&&F(p).status==='pending'&&F(p).addressee===me.id);
@@ -300,14 +337,12 @@ function drawPeople(){
   const nmx=p=>`<span class="flex items-center gap-2">${av(p,8)}${dot(p.id)}<span style="${nameCss(p)}">${esc(dn(p))}</span></span>`;
   let h=servers.some(x=>x.is_default)?'':'<button onclick="rejoin()" class="w-full bg-[#5865f2] text-white text-sm font-bold rounded-md py-1.5 mb-1">Join BEANCORD</button>';
   if(friendTab==='pending'&&inc.length)h+=head('Friend requests')+inc.map(p=>`<div class="flex items-center justify-between px-2 py-1 text-sm">${nmx(p)}<span class="text-xs"><button onclick="answer('${p.id}',true)" class="text-[#23a55a]">Accept</button><button onclick="answer('${p.id}',false)" class="text-[#f23f43] ml-2">Decline</button></span></div>`).join('');
-  h+=friendTabs(inc)+(friendTab==='online'||friendTab==='all'?head((friendTab==='online'?'Online':'All friends')+' — '+fri.length):'')+(fri.length?fri.map(p=>`<button data-friend-uid="${p.id}" onclick="openDM('${p.id}')" class="w-full flex justify-between items-center px-2 py-2 rounded-md text-sm ${cur.id===p.id?'bg-[#404249] text-white':'text-[#949ba4] hover:bg-[#35373c]'}">${nmx(p)}<span class="flex items-center gap-2">${unread[p.id]?`<span class="bg-[#f23f43] text-white text-[10px] font-black px-2 rounded-full">${unread[p.id]}</span>`:''}<span onclick="event.stopPropagation();removeFriend('${p.id}')" title="Remove friend" class="text-[#80848e] hover:text-[#f23f43] text-xs px-1">✕</span></span></button>`).join(''):friendEmpty());
+  const friRest=fri.filter(p=>!dmPlaced(p.id));
+  h+=friendTabs(inc)+dmSections(fri,nmx)+(friendTab==='online'||friendTab==='all'?head((friendTab==='online'?'Online':'All friends')+' — '+friRest.length):'')+(fri.length?friRest.map(p=>friRow(p,nmx)).join(''):friendEmpty());
   const sent=others.filter(p=>F(p)&&F(p).status==='pending'&&F(p).requester===me.id);
   if(friendTab==='pending'&&sent.length)h+=head('Sent requests')+sent.map(p=>`<div class="flex items-center justify-between px-2 py-1 text-sm">${nmx(p)}<span class="text-xs text-[#949ba4]">Pending <button onclick="removeFriend('${p.id}',true)" class="ml-2 text-[#f23f43] hover:underline">Cancel</button></span></div>`).join('');
   if(friendTab==='blocked')h+=blockedList();if(friendTab==='pending'&&!inc.length&&!sent.length)h+='<p class="text-xs text-[#949ba4] px-2 pt-1">No pending requests.</p>';
-  h+=head('Group Chats')+groups.map(g=>{
-    const mnames=g.members.filter(id=>id!==me.id).map(id=>dn(profiles[id]||{username:'?'})).join(', ');
-    return `<button onclick="openGroup('${g.id}')" class="w-full flex justify-between items-center px-2 py-2 rounded-md text-sm ${cur.type==='group'&&cur.id===g.id?'bg-[#404249] text-white':'text-[#949ba4] hover:bg-[#35373c]'}"><span class="truncate">👥 ${esc(g.name)}<span class="block text-[10px] text-[#80848e] truncate font-normal">${esc(mnames)}</span></span>${unread[g.id]?`<span class="bg-[#f23f43] text-white text-[10px] font-black px-2 rounded-full flex-shrink-0">${unread[g.id]}</span>`:''}</button>`
-  }).join('')+'<button onclick="newGroupPrompt()" class="w-full text-xs text-[#5865f2] text-left px-2 py-1.5">+ New group chat</button>';
+  h+=head('Group Chats')+groups.filter(g=>!dmPlaced(g.id)).map(grpRow).join('')+'<button onclick="newGroupPrompt()" class="w-full text-xs text-[#5865f2] text-left px-2 py-1.5">+ New group chat</button>';
   h+=head('Add a friend')+'<div class="px-2"><div class="flex gap-1"><input id="fadd" onkeydown="if(event.key===\'Enter\')addByName()" placeholder="Type their username" autocomplete="off" class="flex-1 min-w-0 bg-[#1e1f22] rounded px-2 py-1.5 text-xs text-white outline-none"><button onclick="addByName()" class="bg-[#5865f2] text-white text-xs px-2 rounded">Send</button></div><div id="fmsg" class="text-[10px] text-[#949ba4] mt-1"></div></div>';
   const keep=($('fadd')||{}).value||'';
   $('sc').innerHTML=h;if($('fadd'))$('fadd').value=keep;
@@ -486,7 +521,11 @@ function nameCss(p){p=p||{};const s=p.name_style&&typeof p.name_style==='object'
   if(s.glow)o+=`filter:drop-shadow(0 0 5px ${s.m==='g'&&HEX.test(s.a||'')?s.a:c});`;
   const f=NAME_FONTS[s.f];if(f&&f[1])o+='font-family:'+f[1]+';';
   return o}
-function av(p,n){p=p||{username:'?'};const z=n===20?'w-20 h-20':n===16?'w-16 h-16':n===6?'w-6 h-6':n===9?'w-9 h-9':'w-8 h-8';
+let shopDecor={},ownedDecor=new Set();
+async function loadShopDecor(){try{const [a,b]=await Promise.all([sb.from('shop_decor').select('*'),sb.from('user_decor').select('decor_id')]);shopDecor={};(a.data||[]).forEach(d=>shopDecor[d.id]=d);ownedDecor=new Set((b.data||[]).map(x=>x.decor_id))}catch(e){}}
+const decWrap=(p,html)=>{const d=p&&p.equipped_decor&&shopDecor[p.equipped_decor];return d?`<span class="dec dec-${esc(d.kind)}" style="--d1:${esc(d.c1)};--d2:${esc(d.c2)}">${html}</span>`:html};
+function av(p,n){return decWrap(p,av0(p,n))}
+function av0(p,n){p=p||{username:'?'};const z=n===20?'w-20 h-20':n===16?'w-16 h-16':n===6?'w-6 h-6':n===9?'w-9 h-9':'w-8 h-8';
   if(okImg(p.avatar))return `<img src="${esc(p.avatar)}" loading="lazy" class="${z} rounded-full object-cover flex-shrink-0">`;
   return `<span class="${z} rounded-full bg-[#2b2d31] flex items-center justify-center overflow-hidden flex-shrink-0">${bean(p.username)}</span>`}
 function pickAvatar(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.onload=()=>{const c=document.createElement('canvas');c.width=c.height=96;const x=c.getContext('2d');const q=Math.min(i.width,i.height);x.drawImage(i,(i.width-q)/2,(i.height-q)/2,q,q,0,0,96,96);c.toBlob(b=>b?res(b):rej(),'image/jpeg',0.85)};i.onerror=rej;i.src=r.result};r.onerror=rej;r.readAsDataURL(f)})}
@@ -511,9 +550,11 @@ function pickAvatar(f){return new Promise((res,rej)=>{const r=new FileReader();r
   function curNS(){const o={m:nsM,a:$('pna').value,b:$('pnb').value,glow:$('pnglow').checked,f:$('pnf').value};return(o.m==='s'&&!o.glow&&o.f==='default')?null:o}
   function nsMode(m){nsM=m;prev()}
   function gradClear(){gradOn=false;prev()}
-  async function wearInit(){try{if(!Object.keys(shopTags).length)await loadShopTags();const {data}=await sb.from('user_tags').select('tag_id');owned=new Set((data||[]).map(x=>x.tag_id))}catch(e){}wearDraw()}
+  async function wearInit(){try{if(!Object.keys(shopTags).length)await loadShopTags();if(!Object.keys(shopDecor).length)await loadShopDecor();const {data}=await sb.from('user_tags').select('tag_id');owned=new Set((data||[]).map(x=>x.tag_id))}catch(e){}wearDraw()}
   function wearDraw(){const on=new Set(equippedIds(me).map(String)),ids=[...owned].filter(i=>shopTags[i]);
-    $('pwear').innerHTML=(ids.length?'<div class="text-xs text-[#949ba4]">Putting something on or taking it off applies right away.</div>'+ids.map(i=>`<div class="flex items-center gap-2"><span class="flex-1 min-w-0 truncate">${chip(shopTags[i])}</span><button type="button" onclick="wearToggle('${esc(String(i))}')" class="pill">${on.has(String(i))?'Take off':'Wear'}</button></div>`).join(''):'<div class="text-xs text-[#949ba4]">Nothing to wear yet. Tags come from the Shop.</div>')+`<button type="button" onclick="$('pm').classList.add('hidden');openShop()" class="w-full text-left text-sm text-[#dbdee1] hover:text-white pt-1">🛍 Get more in the Shop ↗</button>`}
+    const dids=[...ownedDecor].filter(i=>shopDecor[i]);
+    const decHtml=dids.length?'<div class="text-xs text-[#949ba4] pt-2">Avatar decorations</div>'+dids.map(i=>`<div class="flex items-center gap-2">${av({...me,equipped_decor:i},9)}<span class="flex-1 min-w-0 truncate text-sm">${esc(shopDecor[i].name)}</span><button type="button" onclick="decEquip(${me.equipped_decor===i?'null':`'${i}'`})" class="pill">${me.equipped_decor===i?'Take off':'Wear'}</button></div>`).join(''):'';
+    $('pwear').innerHTML=decHtml+(ids.length?'<div class="text-xs text-[#949ba4]">Putting something on or taking it off applies right away.</div>'+ids.map(i=>`<div class="flex items-center gap-2"><span class="flex-1 min-w-0 truncate">${chip(shopTags[i])}</span><button type="button" onclick="wearToggle('${esc(String(i))}')" class="pill">${on.has(String(i))?'Take off':'Wear'}</button></div>`).join(''):'<div class="text-xs text-[#949ba4]">Nothing to wear yet. Tags come from the Shop.</div>')+`<button type="button" onclick="$('pm').classList.add('hidden');openShop()" class="w-full text-left text-sm text-[#dbdee1] hover:text-white pt-1">🛍 Get more in the Shop ↗</button>`}
   async function wearToggle(id){const {error}=await sb.rpc('toggle_equip_tag',{tid:id});if(error)return alert(error.message);await loadProfiles();me=profiles[me.id]||me;wearDraw()}
   $('pc').oninput=prev;$('pn').oninput=prev;$('pbn').oninput=prev;$('ppr').oninput=prev;$('pna').oninput=prev;$('pnb').oninput=prev;$('pnglow').onchange=prev;$('pnf').onchange=prev;$('pgt').oninput=()=>{gradOn=true;prev()};$('pgb').oninput=()=>{gradOn=true;prev()};
   async function saveProfile(){
@@ -577,7 +618,9 @@ async function runCmd(line){
   if(cmd==='auditlog'){if(!srvId)return sys('Open a server first.');const {data,error}=await sb.from('audit_log').select('*').eq('server_id',srvId).order('created_at',{ascending:false}).limit(20);if(error)return sys(error.message);if(!data.length)return sys('No audit log entries yet.');data.forEach(e=>{const a=profiles[e.actor],t=profiles[e.target];sys((a?a.username:'someone')+' '+e.action+(t?' '+t.username:'')+(e.detail?' ('+e.detail+')':'')+' — '+new Date(e.created_at).toLocaleString())});return;}
   if(cmd==='iplog'){const {data,error}=await sb.rpc('get_ip_log_all',{lim:30});if(error)return sys(error.message);if(!data.length)return sys('No log entries yet.');data.forEach(r=>sys((r.success?'✓':'✗')+' '+r.action+' "'+r.username_tried+'" from '+r.ip+' — '+new Date(r.created_at).toLocaleString()));return;}
   if(cmd==='reload'){if(!(await askConfirm('Reload the page for everyone online right now?')))return;const {error}=await sb.from('app_signals').insert({kind:'reload'});return sys(error?'Reload failed: '+error.message+(error.code?' ('+error.code+')':''):'Reload sent.')}
-  if(cmd==='reports')return showReports();let u=Object.values(profiles).find(p=>p.username===(name||'').toLowerCase().replace(/^@/,''));
+  if(cmd==='reports')return showReports();
+  if(cmd==='bans')return showBans();
+  let u=Object.values(profiles).find(p=>p.username===(name||'').toLowerCase().replace(/^@/,''));
   if(!u&&name){ // not in the list already loaded in the page: ask the database directly (the list can be incomplete or out of date)
     const {data:du}=await sb.from('profiles').select('*').eq('username',String(name).toLowerCase().replace(/^@/,'')).maybeSingle();
     if(du){u=du;profiles[du.id]=du}
@@ -595,7 +638,7 @@ async function runCmd(line){
   if(cmd==='deleteuser'){if(!(await askConfirm('Permanently delete the account '+u.username+'?')))return;return rpc('admin_delete_account',{uid:u.id},u.username+' was deleted')}
   if(cmd==='banip'){const {data,error}=await sb.rpc('ban_ip',{target_uid:u.id});if(error)return sys(error.message);return sys('Banned the address on record for '+u.username+' ('+data+'). This does not remove their account access on its own — pair it with /ban if needed.')}
   if(cmd==='hwidban'){const {data,error}=await sb.rpc('ban_device',{target_uid:u.id});if(error)return sys(error.message);return sys('Banned '+data+' device'+(data===1?'':'s')+' tied to '+u.username+'. They are blocked the next time they open the site. Pair it with /ban to cut off the account right away.')}
-  if(cmd==='unhwidban'){const {data,error}=await sb.rpc('unban_device',{target_uid:u.id});if(error)return sys(error.message);return sys('Removed '+data+' device ban'+(data===1?'':'s')+' tied to '+u.username)}
+  if(cmd==='unhwidban'){const {data,error}=await sb.rpc('unban_device',{target_uid:u.id});if(error)return sys(error.message);if(!data)return sys('This user has no device bans.');return sys('Removed '+data+' device ban'+(data===1?'':'s')+' tied to '+u.username)}
   if(cmd==='devalts'){const {data,error}=await sb.rpc('get_device_alts',{target_uid:u.id});if(error)return sys(error.message);if(!data||!data.length)return sys('No other accounts have used the same browser or device as '+u.username+' (only devices seen since device tracking started are known).');sys('Accounts on the same device as '+u.username+':');data.forEach(r=>sys('\u2022 '+r.alt_name+' ('+r.via+')'));return sys('Use /ban or /deleteuser on the ones you want gone.')}
   if(cmd==='unbanip'){const {error}=await sb.rpc('unban_ip',{target_uid:u.id});if(error)return sys(error.message);return sys('Removed the IP ban tied to '+u.username)}
   if(cmd==='ips'){const {data,error}=await sb.rpc('get_ip_log',{target_uid:u.id,lim:20});if(error)return sys(error.message);if(!data.length)return sys('No log entries for '+u.username+' yet.');data.forEach(r=>sys((r.success?'✓':'✗')+' '+r.action+' from '+r.ip+' — '+new Date(r.created_at).toLocaleString()));return;}
@@ -654,6 +697,7 @@ let CMD_INFO=[
 ["warn","user reason","Warn someone","timeout_members",false],
 ["purge","20 [user]","Delete recent messages","manage_messages",false],
 ["mutes","","Who is muted or banned right now","timeout_members",false],
+["bans","","Who is banned right now (only you see it)","ban_members",false],
 ["mute","user minutes","Mute someone","timeout_members",false],
 ["unmute","user","Unmute someone","timeout_members",false],
 ["kick","user","Remove someone from the server","kick_members",false],
@@ -703,7 +747,7 @@ const roleKey=r=>String(r.name||'').toLowerCase().replace(/[^a-z0-9_]/g,'');
 // bot accounts and the command table live in the database (Server Settings > Bots & Lists / Commands)
 async function loadSiteLists(){
   try{const {data}=await sb.from('bc_bots').select('username');if(data&&data.length)BOT_NAMES=data.map(x=>String(x.username).toLowerCase())}catch(e){}
-  try{const {data}=await sb.from('bc_commands').select('*').order('ord');if(data&&data.length)CMD_INFO=data.map(r=>[r.name,r.usage||'',r.info||'',r.perm||'',!!r.hidden])}catch(e){}
+  try{const {data}=await sb.from('bc_commands').select('*').order('ord');if(data&&data.length){const nb=CMD_INFO.find(x=>x[0]==='bans');CMD_INFO=data.map(r=>[r.name,r.usage||'',r.info||'',r.perm||'',!!r.hidden]);if(nb&&!CMD_INFO.some(x=>x[0]==='bans'))CMD_INFO.push(nb)}}catch(e){}
 }
 const BOLDMARK='[[big]]';
 function plainText(c){
@@ -876,7 +920,7 @@ async function profGiveRole(uid,rid){
   if(error)alert(error.message);
   await refreshMembersOnly();showProfile(uid);
 }
-function closeVp(){$('vp').classList.add('hidden')}
+function closeVp(){$('vp').classList.add('hidden');$('vpc').style.background=''}
 function linkify(t){return esc(t).replace(/(https?:\/\/[^\s<"]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="text-[#4f9cf5] hover:underline">$1</a>')}
 function showProfile(uid){
   if(!profiles[uid]&&!_prTried.has(uid)){_prTried.add(uid);sb.from('profiles').select('*').eq('id',uid).maybeSingle().then(({data})=>{if(data){profiles[uid]=data;if(!$('vp').classList.contains('hidden'))showProfile(uid)}})}
@@ -927,6 +971,16 @@ function showProfile(uid){
     if(x&&el)el.innerHTML='<div>#️⃣ account #'+x.account_no+'</div><div>💬 '+Number(x.msgs).toLocaleString()+' messages</div>'})}
 async function blockUser(uid){if(!(await askConfirm('Block '+dn(profiles[uid])+'? You will stop seeing their messages. Undo with /unblock username')))return;const {error}=await sb.from('blocks').insert({blocked:uid});if(error)return alert(error.message);blocked.add(uid);if(cur.type==='ch')openChannel(cur.id);else if(cur.type==='dm')openDM(cur.id)}
 async function reportMsg(id){const r=(await askText('Why are you reporting this message? (optional)'));if(r===null)return;const {error}=await sb.from('reports').insert({message_id:id,reason:r.slice(0,300)});toast(error?error.message:'Report sent to the staff')}
+const _ago=ms=>{const m=Math.max(1,Math.round(ms/60000));if(m<60)return m+' min';const h=Math.floor(m/60);if(h<48)return h+'h '+(m%60)+'m';return Math.round(h/24)+' days'};
+async function showBans(){
+  const d=servers.find(s=>s.is_default);if(!d)return sys('Could not find the main server.');
+  const {data,error}=await sb.from('server_bans').select('*').eq('server_id',d.id);if(error)return sys(error.message);
+  const now=Date.now(),list=(data||[]).filter(b=>!b.until||new Date(b.until)>now).sort((a,b)=>(a.until?new Date(a.until):1e16)-(b.until?new Date(b.until):1e16));
+  const f=list.slice(0,24).map(b=>{const p=profiles[b.user_id];const left=b.until?_ago(new Date(b.until)-now)+' left · until '+new Date(b.until).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'Permanent';
+    return {n:(p?dn(p)+' (@'+p.username+')':'Unknown user'),v:left+(b.reason?'\nReason: '+b.reason:''),i:false}});
+  const o=list.length?{t:'🚫 Banned members ('+list.length+')',d:'Currently banned from '+d.name+'. Use /unban username to lift one.',c:'#f23f43',f:f.concat(list.length>24?[{n:'…and '+(list.length-24)+' more',v:'',i:false}]:[]),ft:'Only you can see this'}
+    :{t:'✅ Nobody is banned right now',d:'The ban list for '+d.name+' is empty.',c:'#23a55a',ft:'Only you can see this'};
+  $('msgs').insertAdjacentHTML('beforeend','<div class="px-4 py-1">'+embedBox(o)+'</div>');$('msgs').scrollTop=1e9}
 async function showReports(){const {data:r,error}=await sb.from('reports').select('*').order('created_at',{ascending:false}).limit(15);if(error)return sys(error.message);if(!r.length)return sys('No reports.');
   const {data:ms}=await sb.from('messages').select('id,content,sender_id').in('id',r.map(x=>x.message_id));const mm={};(ms||[]).forEach(x=>mm[x.id]=x);
   r.forEach(x=>{const m=mm[x.message_id],a=profiles[x.reporter],b=m&&profiles[m.sender_id];sys((a?a.username:'?')+' reported '+(b?b.username:'?')+': "'+(m?m.content.slice(0,80):'(deleted)')+'"'+(x.reason?' — '+x.reason:''))})}
@@ -1027,20 +1081,31 @@ $('i').addEventListener('paste',e=>{
   }
 });
 let shopTags={},owned=new Set();try{localStorage.removeItem('theme')}catch(e){}
-const chip=t=>`<span class="text-[9px] font-black uppercase px-1.5 rounded" style="background:${esc(t.color)};color:${esc(t.text_color)}">${esc(t.label)}</span>`;
+const chip=t=>{const H=/^#[0-9a-fA-F]{6}$/,c1=H.test(t.color||'')?t.color:'#5865f2',c2=H.test(t.color2||'')?t.color2:null,tc=H.test(t.text_color||'')?t.text_color:'#ffffff';
+  return `<span class="text-[9px] font-black uppercase px-1.5 rounded" style="background:${c2?`linear-gradient(90deg,${c1},${c2})`:c1};color:${tc}${t.glow?`;box-shadow:0 0 7px ${c1},0 0 14px ${c2||c1}66;text-shadow:0 0 5px ${tc}`:''}">${esc(t.label)}</span>`};
 const MAX_TAGS=2;
 const canNickname=()=>defPerm('manage_nicknames');
 const equippedIds=p=>(!p?[]:(Array.isArray(p.equipped_tags)&&p.equipped_tags.length?p.equipped_tags:(p.equipped_tag?[p.equipped_tag]:[]))).slice(0,MAX_TAGS);
 const utag=p=>equippedIds(p).map(i=>shopTags[i]).filter(Boolean).map(t=>' '+chip(t)).join('');
 async function loadShopTags(){const {data}=await sb.from('shop_tags').select('*');shopTags={};(data||[]).forEach(t=>shopTags[t.id]=t)}
 async function openShop(){await loadProfiles();await loadShopTags();const {data}=await sb.from('user_tags').select('tag_id');owned=new Set((data||[]).map(x=>x.tag_id));drawShop();$('shop').classList.remove('hidden')}
-function drawShop(){$('bal').textContent='🫘 '+(me.beans??0);$('newtagbtn').classList.add('hidden');
+function drawShop(){drawDecor();$('bal').textContent='🫘 '+(me.beans??0);$('newtagbtn').classList.add('hidden');
   $('shopg').innerHTML=Object.values(shopTags).sort((a,b)=>a.price-b.price).map(t=>{
     const eq=equippedIds(me).includes(t.id),has=owned.has(t.id),lock=defRk<(t.min_rank||0);
     const b=(f,l,c)=>`<button ${f} class="px-4 py-1.5 rounded-lg text-xs font-bold ${c}">${l}</button>`;
     const btn=eq?b(`onclick="equip('${t.id}')"`,'Unequip','bg-[#404249] text-white'):has?b(`onclick="equip('${t.id}')"`,'Equip','bg-[#404249] text-white'):lock?b('disabled','🔒 Locked','bg-[#1e1f22] text-[#949ba4] opacity-60'):b(`onclick="buy('${t.id}')"`,'Buy','bg-pink-500 text-white');
     const owner=false;   // tags are created, edited and deleted in Server Settings > Tags
     return `<div class="bg-[#2b2d31] rounded-xl p-3 border border-black/30"><div class="bg-[#1e1f22] rounded-lg h-24 flex items-center justify-center gap-2">${av(me,9)}<span class="font-bold" style="${nameCss(me)}">${esc(dn(me))}</span>${chip(t)}</div><div class="mt-3 flex justify-between items-start"><div><div class="font-bold text-white">${esc(t.label)}</div><div class="text-xs text-[#949ba4]">${esc(t.description||'')}</div></div>${eq?'<span class="text-[10px] font-black text-pink-400 bg-pink-500/10 px-2 py-0.5 rounded">EQUIPPED</span>':''}</div><div class="mt-3 flex items-center justify-between"><div class="text-sm font-bold text-white">🫘 ${t.price}${t.old_price?` <s class="text-xs font-normal text-[#949ba4]">${t.old_price}</s>`:''}${t.min_rank>1?`<span class="ml-2 text-[10px] font-normal text-[#949ba4]">${t.min_rank>=3?'mod':'verified'}+</span>`:''}</div><div class="flex gap-2"><button onclick="gift('${t.id}')" title="Gift to a friend" class="px-2 rounded-lg bg-[#1e1f22]">🎁</button>${owner?`<button onclick="editTag('${t.id}')" title="Edit" class="px-2 rounded-lg bg-[#1e1f22]">✎</button><button onclick="delTag('${t.id}')" title="Delete" class="px-2 rounded-lg bg-[#1e1f22] text-[#f23f43]">🗑</button>`:''}${btn}</div></div></div>`}).join('')}
+function drawDecor(){const e=$('shopdw');if(!e)return;const list=Object.values(shopDecor).sort((a,b)=>a.price-b.price);
+  e.innerHTML=list.length?`<h3 class="font-bold text-white mb-2 mt-6">Avatar decorations</h3><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">${list.map(d=>{
+    const has=ownedDecor.has(d.id),eq=me.equipped_decor===d.id;
+    const b=(f,l,c)=>`<button ${f} class="px-4 py-1.5 rounded-lg text-xs font-bold ${c}">${l}</button>`;
+    const btn=eq?b(`onclick="decEquip(null)"`,'Unequip','bg-[#404249] text-white'):has?b(`onclick="decEquip('${d.id}')"`,'Equip','bg-[#404249] text-white'):b(`onclick="decBuy('${d.id}')"`,'Buy','bg-pink-500 text-white');
+    return `<div class="bg-[#2b2d31] rounded-xl p-3 border border-black/30"><div class="bg-[#1e1f22] rounded-lg h-24 flex items-center justify-center gap-3">${av({...me,equipped_decor:d.id},16)}<span class="font-bold" style="${nameCss(me)}">${esc(dn(me))}</span></div>
+      <div class="mt-3 flex justify-between items-start"><div><div class="font-bold text-white">${esc(d.name)}</div><div class="text-xs text-[#949ba4]">${esc(d.description||'')}</div></div>${eq?'<span class="text-[10px] font-black text-pink-400 bg-pink-500/10 px-2 py-0.5 rounded">EQUIPPED</span>':''}</div>
+      <div class="mt-3 flex items-center justify-between"><div class="text-sm font-bold text-white">🫘 ${d.price}</div>${has&&!eq?'':''}${btn}</div></div>`}).join('')}</div>`:''}
+async function decDo(fn,args){const {error}=await sb.rpc(fn,args);if(error)alert(error.message);await loadProfiles();me=profiles[me.id]||me;await loadShopDecor();drawShop();if(typeof wearDraw==='function'&&!$('pm').classList.contains('hidden'))wearDraw();if(!srvId)drawPeople();else drawMembers()}
+const decBuy=id=>decDo('buy_decor',{did:id}),decEquip=id=>decDo('equip_decor',{did:id});
 async function shopDo(fn,args){const {error}=await sb.rpc(fn,args);if(error)alert(error.message);await loadProfiles();const {data}=await sb.from('user_tags').select('tag_id');owned=new Set((data||[]).map(x=>x.tag_id));drawShop()}
 const buy=id=>shopDo('buy_tag',{tid:id}),equip=id=>shopDo('toggle_equip_tag',{tid:id}),claimDaily=async()=>{const {data,error}=await sb.rpc('claim_daily',{});if(error)return alert(error.message);await loadProfiles();me=profiles[me.id]||me;if(!$('shop').classList.contains('hidden'))drawShop();toast(typeof data==='string'&&data?data:'Daily beans claimed')};
 async function gift(id){const n=(await askText('Gift this tag to which friend? (their username)'));if(!n)return;const u=Object.values(profiles).find(p=>p.username===n.trim().toLowerCase().replace(/^@/,''));if(!u)return alert('No user with that username');await shopDo('gift_tag',{tid:id,uid:u.id})}
@@ -1646,7 +1711,7 @@ const FLD_LBL='block text-[11px] font-bold uppercase tracking-wide text-[#949ba4
 const FLD_INP='block mt-1.5 w-full bg-[#1e1f22] rounded-lg px-3 py-2 text-white text-sm font-normal normal-case outline-none focus:ring-2 focus:ring-[#5865f2]/60';
 function tagPreview(){
   const e=$('tf_prev');if(!e)return;
-  e.innerHTML=chip({label:$('tf_label').value.trim()||'PREVIEW',color:$('tf_color').value,text_color:$('tf_text').value});
+  e.innerHTML=chip({label:$('tf_label').value.trim()||'PREVIEW',color:$('tf_color').value,text_color:$('tf_text').value,color2:$('tf_grad').checked?$('tf_color2').value:null,glow:$('tf_glow').checked});
 }
 function openTagForm(id){
   tagEditing=id;const t=id?shopTags[id]:null;if(id&&!t)return;
@@ -1656,6 +1721,7 @@ function openTagForm(id){
    ${t?'':`<label class="${FLD_LBL}">Short id<input id="tf_id" maxlength="16" placeholder="vip" class="${FLD_INP}"><span class="block normal-case font-normal text-[#80848e] mt-1">Lowercase letters and numbers only. It can't be changed later.</span></label>`}
    <label class="${FLD_LBL}">Label (shown on the badge)<input id="tf_label" maxlength="14" placeholder="VIP" class="${FLD_INP}"></label>
    <div class="flex gap-6 text-[11px] font-bold uppercase tracking-wide text-[#949ba4]"><label class="flex items-center gap-2">Badge color<input id="tf_color" type="color"></label><label class="flex items-center gap-2">Text color<input id="tf_text" type="color"></label></div>
+   <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] font-bold uppercase tracking-wide text-[#949ba4]"><label class="flex items-center gap-2"><input id="tf_grad" type="checkbox"> Gradient</label><label class="flex items-center gap-2">Second color<input id="tf_color2" type="color"></label><label class="flex items-center gap-2"><input id="tf_glow" type="checkbox"> Neon glow</label></div>
    <label class="${FLD_LBL}">Description<input id="tf_desc" maxlength="80" placeholder="What this tag is for" class="${FLD_INP}"></label>
    <div class="flex gap-3"><label class="${FLD_LBL} flex-1">Price (beans)<input id="tf_price" type="number" min="1" step="1" inputmode="numeric" class="${FLD_INP}"></label>
    <label class="${FLD_LBL} flex-1">Who can buy it<select id="tf_min" class="${FLD_INP}"><option value="0">Everyone</option>${[...croles].sort((a,b)=>(a.position||0)-(b.position||0)).map(r=>`<option value="${r.position||0}">${esc(r.name)} and up</option>`).join('')}<option value="${OWNER_RANK}">Owner only</option></select></label></div>
@@ -1663,8 +1729,8 @@ function openTagForm(id){
   <div id="tf_msg" class="text-xs text-[#f23f43] mt-3 min-h-[1rem]"></div>
   <div class="flex gap-2 mt-2"><button onclick="saveTagForm()" class="flex-1 bg-[#23a55a] hover:bg-[#1a8044] text-white py-2 rounded-lg text-sm font-semibold">${t?'Save changes':'Create tag'}</button><button onclick="closeVp()" class="flex-1 bg-[#4e5058] hover:bg-[#5d6068] text-white py-2 rounded-lg text-sm">Cancel</button></div>`;
   $('tf_label').value=t?t.label:'';$('tf_color').value=t?t.color:'#5865f2';$('tf_text').value=t?t.text_color:'#ffffff';
-  $('tf_desc').value=t?(t.description||''):'';$('tf_price').value=t?t.price:300;{const v=String(t?(t.min_rank||0):0);if(![...$('tf_min').options].some(o=>o.value===v)){const o=document.createElement('option');o.value=v;o.textContent='Rank '+v+' and up';$('tf_min').appendChild(o)}$('tf_min').value=v}
-  ['tf_label','tf_color','tf_text'].forEach(k=>$(k).addEventListener('input',tagPreview));
+  $('tf_grad').checked=!!(t&&t.color2);$('tf_color2').value=(t&&t.color2)||'#ff4fa3';$('tf_glow').checked=!!(t&&t.glow);$('tf_desc').value=t?(t.description||''):'';$('tf_price').value=t?t.price:300;{const v=String(t?(t.min_rank||0):0);if(![...$('tf_min').options].some(o=>o.value===v)){const o=document.createElement('option');o.value=v;o.textContent='Rank '+v+' and up';$('tf_min').appendChild(o)}$('tf_min').value=v}
+  ['tf_label','tf_color','tf_text','tf_color2'].forEach(k=>$(k).addEventListener('input',tagPreview));['tf_grad','tf_glow'].forEach(k=>$(k).addEventListener('change',tagPreview));
   tagPreview();$('vp').classList.remove('hidden');
   setTimeout(()=>{const i=$(t?'tf_label':'tf_id');if(i)i.focus()},50);
 }
@@ -1675,11 +1741,43 @@ async function saveTagForm(){
   const label=$('tf_label').value.trim();if(!label)return msg('Give the tag a label.');
   const price=parseInt($('tf_price').value,10);if(!(price>=1))return msg('The price must be 1 bean or more.');
   const f={label,color:$('tf_color').value,text_color:$('tf_text').value,description:$('tf_desc').value.trim(),price,min_rank:parseInt($('tf_min').value,10)};
-  const {error}=await sb.rpc('upsert_shop_tag',{tid:id,...f,t_old_price:tagEditing?shopTags[tagEditing].old_price:null});
+  const {error}=await sb.rpc('upsert_shop_tag',{tid:id,...f,t_old_price:tagEditing?shopTags[tagEditing].old_price:null,tcolor2:$('tf_grad').checked?$('tf_color2').value:null,tglow:$('tf_glow').checked});
   if(error)return msg(error.message);
   await loadShopTags();drawShop();closeVp();
 }
 function newTag(){openTagForm(null)}
+
+// ===== feedback: suggestions, emoji ideas, bug reports =====
+const FB_KIND={suggestion:['💡','Suggestion'],emoji:['😀','Emoji idea'],bug:['🐛','Bug report']};
+const FB_STATUS={new:['🆕','New'],planned:['📌','Planned'],done:['✅','Done'],dismissed:['🚫','Dismissed']};
+let fbKind='suggestion';
+async function openFeedback(){
+  $('vpc').style.background='';fbKind='suggestion';
+  $('vpc').innerHTML=`<div class="flex items-center justify-between mb-3"><h3 class="font-bold text-white">Send feedback</h3><button onclick="closeVp()" class="text-[#949ba4] hover:text-white">✕</button></div>
+  <div class="text-xs text-[#949ba4] mb-3">Only the owner can read what you send, so it won't fill up a channel.</div>
+  <div class="grid grid-cols-3 gap-2 mb-3">${Object.entries(FB_KIND).map(([k,v])=>`<button id="fbk_${k}" type="button" onclick="fbPick('${k}')" class="py-2 rounded-lg text-xs font-semibold">${v[0]}<br>${v[1]}</button>`).join('')}</div>
+  <textarea id="fb_body" maxlength="1000" rows="5" placeholder="" class="${FLD_INP}" style="resize:vertical"></textarea>
+  <div class="flex justify-between text-[11px] text-[#80848e] mt-1"><span id="fb_hint"></span><span id="fb_n">0/1000</span></div>
+  <div id="fb_msg" class="text-xs min-h-[1rem] mt-2"></div>
+  <div class="flex gap-2 mt-1"><button onclick="fbSend()" class="flex-1 bg-[#23a55a] hover:bg-[#1a8044] text-white py-2 rounded-lg text-sm font-semibold">Send</button><button onclick="closeVp()" class="flex-1 bg-[#4e5058] hover:bg-[#5d6068] text-white py-2 rounded-lg text-sm">Close</button></div>
+  <div id="fb_mine" class="mt-4"></div>`;
+  $('fb_body').oninput=()=>{$('fb_n').textContent=$('fb_body').value.length+'/1000'};
+  fbPick('suggestion');$('vp').classList.remove('hidden');setTimeout(()=>$('fb_body').focus(),50);fbMine();
+}
+function fbPick(k){fbKind=k;Object.keys(FB_KIND).forEach(x=>{const b=$('fbk_'+x);if(!b)return;b.style.background=x===k?'#ff6b8a':'#1e1f22';b.style.color=x===k?'#1a0b10':'#dbdee1'});
+  $('fb_body').placeholder={suggestion:'What should we add or change?',emoji:'Which emoji should we add? Describe it or say what it should look like.',bug:'What went wrong? Where, and what did you click?'}[k];
+  $('fb_hint').textContent=k==='bug'?'Tell us which page and what you expected.':''}
+async function fbSend(){
+  const body=$('fb_body').value.trim(),msg=(t,bad)=>{$('fb_msg').style.color=bad?'#f23f43':'#23a55a';$('fb_msg').textContent=t};
+  if(body.length<3)return msg('Write a little more first.',1);
+  if(slurBlock(body,'That message'))return;
+  const {error}=await sb.from('feedback').insert({kind:fbKind,body:fbKind==='bug'?body+'\n\n['+navigator.userAgent.slice(0,120)+']':body});
+  if(error)return msg(/feedback/.test(error.message)&&!/10 a day/.test(error.message)?'Run feedback.sql in Supabase first.':error.message,1);
+  $('fb_body').value='';$('fb_n').textContent='0/1000';msg('Sent, thank you!');fbMine();
+}
+async function fbMine(){
+  const {data}=await sb.from('feedback').select('kind,body,status,created_at').eq('user_id',me.id).order('created_at',{ascending:false}).limit(5);const e=$('fb_mine');if(!e)return;
+  e.innerHTML=(data&&data.length)?'<div class="text-[11px] font-bold uppercase tracking-wide text-[#949ba4] mb-1">Your recent ones</div>'+data.map(r=>`<div class="flex items-start gap-2 text-xs text-[#dbdee1] py-1"><span title="${esc(FB_STATUS[r.status][1])}">${FB_STATUS[r.status][0]}</span><span class="flex-1 min-w-0 truncate">${FB_KIND[r.kind][0]} ${esc(r.body.split('\n')[0])}</span></div>`).join(''):''}
 function editTag(id){openTagForm(id)}
 async function delTag(id){if(!(await askConfirm('Delete this tag? Anyone who owns or has equipped it will lose it.')))return;
   const {error}=await sb.rpc('delete_shop_tag',{tid:id});if(error)return alert(error.message);await loadShopTags();drawShop()}
@@ -1746,7 +1844,7 @@ setInterval(()=>{if(!document.hidden&&me)touchSeen()},300000);
 
 
 // ===== custom roles: the manager lives in settingshub.js (Server Settings > Roles) =====
-const PERMS=[['manage_channels','Manage Channels','Create, edit, reorder and delete channels'],['manage_messages','Manage Messages','Pin messages and delete other members\' messages'],['kick_members','Kick Members','Remove members ranked below this role'],['ban_members','Ban Members','Ban members ranked below this role'],['timeout_members','Timeout Members','Mute members ranked below this role'],['view_audit_log','View Audit Log','See the server\'s history of bans, kicks and role changes'],['manage_roles','Manage Roles','Create, edit, reorder and delete roles (can only hand out permissions they have themselves)'],['delete_accounts','Delete Accounts','Permanently delete accounts of members ranked below them. Cannot be undone'],['attach_files','Attach Files','Send images and files in chat'],['add_reactions','Add Reactions','React to messages with emoji'],['manage_server','Manage Server','Welcome and goodbye messages, announcements, bold posts, bot commands, webhooks and the other server settings'],['screenshare','Share Screen','Share their screen in voice calls'],
+const PERMS=[['manage_channels','Manage Channels','Create, edit, reorder and delete channels'],['manage_messages','Manage Messages','Pin messages and delete other members\' messages'],['kick_members','Kick Members','Remove members ranked below this role'],['ban_members','Ban Members','Ban members ranked below this role'],['timeout_members','Timeout Members','Mute members ranked below this role'],['view_audit_log','View Audit Log','See the server\'s history of bans, kicks and role changes'],['manage_roles','Manage Roles','Create, edit, reorder and delete roles (can only hand out permissions they have themselves)'],['delete_accounts','Delete Accounts','Permanently delete accounts of members ranked below them. Cannot be undone'],['attach_files','Attach Files','Send images and files in chat'],['add_reactions','Add Reactions','React to messages with emoji'],['view_feedback','View Feedback','Read suggestions and bug reports'],['manage_server','Manage Server','Welcome and goodbye messages, announcements, bold posts, bot commands, webhooks and the other server settings'],['screenshare','Share Screen','Share their screen in voice calls'],
 ['ban_ips','Ban IPs','Ban an account\'s IP address (people ranked below them)'],['ban_devices','Ban Devices','Ban and unban a person\'s devices'],['view_ips','View IPs','See IP addresses, logins and linked accounts (/ips, /alts, /iplog)'],['manage_nicknames','Change Nicknames','Change other people\'s nicknames and their own'],['manage_words','Manage Blocked Words','Add and remove blocked words'],['manage_automod','Manage Auto-mod','Change the auto-mod settings'],['manage_shop','Manage Shop','Create, edit and delete shop tags']];
 // renderPermChecks lives in settingshub.js
 function toggleAdminPerm(){
@@ -1926,7 +2024,7 @@ async function sendGift(){
 
 // ===== BeanBot =====
 const BOT_FN='beanbot'; // name of the Supabase edge function that runs BeanBot
-const STAFF_CMDS=new Set(['help','bold','newrole','delrole','banword','unbanword','banwords','delserver','auditlog','iplog','reports','reload','ban','unban','mute','unmute','nick','giverole','deleteuser','banip','hwidban','unhwidban','unbanip','devalts','ips','alts','gift','switch','unblock','kick','role']);
+const STAFF_CMDS=new Set(['help','bold','newrole','delrole','banword','unbanword','banwords','delserver','auditlog','iplog','reports','reload','ban','unban','mute','unmute','nick','giverole','deleteuser','banip','hwidban','unhwidban','unbanip','devalts','ips','alts','gift','switch','unblock','kick','role','bans']);
 async function botCall(cmd,line){
   if(!cmd)return sys('Type /help to see the commands.');
   if(cur.type!=='ch')return sys('BeanBot commands only work in server channels.');
