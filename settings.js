@@ -86,7 +86,7 @@ async function stAccount(el){
 }
 
 // -- Appearance
-const THEME_LIST=['default','abyss','amber','berry','bloodmoon','blossom','bubblegum','coral','crimson','forest','gold','grape','graphite','hotpink','ice','lavender','lime','maroon','matrix','midnight','midnightblack','mint','mocha','neon','ocean','peach','plum','purple','rosegold','royal','seafoam','sky','slate','sunset','teal'];
+const THEME_LIST=['default','abyss','amber','autumn','berry','bloodmoon','blossom','bubblegum','christmas','coral','crimson','forest','gold','grape','graphite','halloween','hotpink','ice','lavender','lime','maroon','matrix','midnight','midnightblack','mint','mocha','neon','ocean','peach','plum','purple','rosegold','royal','seafoam','sky','slate','spring','sunset','teal','valentine','winter'];
 function stLook(el){
   el.innerHTML=stH('Appearance')+`<div class="bg-[#2b2d31] rounded-xl px-5 py-2 divide-y divide-[#3f4147]">
     ${stRow('Brightness','Dark is the default.',`<select id="st_mode" class="${stSel}"><option value="dark">Dark</option><option value="light">Light</option></select>`)}

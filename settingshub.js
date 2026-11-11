@@ -13,7 +13,7 @@ function shPages(){
   const roleOk=defRole==='owner'||myPerm('manage_roles');
   return [
     {g:(servers.find(x=>x.id===srvId)||{}).name||'Server',items:[{k:'overview',ic:'⚙',t:'Overview',ok:true}]},
-    {g:'People',items:[{k:'roles',ic:'🛡',t:'Roles',ok:roleOk},{k:'tags',ic:'🏷',t:'Tags',ok:def&&(defRole==='owner'||defPerm('manage_shop'))},{k:'decor',ic:'✨',t:'Decorations',ok:def&&(defRole==='owner'||defPerm('manage_shop'))},{k:'audit',ic:'📋',t:'Audit Log',ok:staff||myPerm('view_audit_log')}]},
+    {g:'People',items:[{k:'roles',ic:'🛡',t:'Roles',ok:roleOk},{k:'tags',ic:'🏷',t:'Tags',ok:def&&(defRole==='owner'||defPerm('manage_shop'))},{k:'inbox',ic:'📥',t:'Staff inbox',ok:def&&(defRole==='owner'||defPerm('manage_server'))},{k:'decor',ic:'✨',t:'Decorations',ok:def&&(defRole==='owner'||defPerm('manage_shop'))},{k:'audit',ic:'📋',t:'Audit Log',ok:staff||myPerm('view_audit_log')}]},
     {g:'Channels',items:[{k:'channels',ic:'#',t:'Channels',ok:staff||myPerm('manage_channels')}]},
     {g:'Moderation',items:[{k:'rules',ic:'📜',t:'Welcome & Rules',ok:staff},{k:'automod',ic:'🤖',t:'Auto-mod',ok:staff&&def},{k:'words',ic:'🚫',t:'Blocked Words',ok:staff&&def}]},
     {g:'Integrations',items:[{k:'hooks',ic:'🔗',t:'Webhooks',ok:staff}]},
@@ -42,7 +42,7 @@ function shDraw(){
   const cur=all.find(i=>i.k===shPage);
   $('sx_t').textContent=cur.t;
   const b=$('sx_b');b.className='';b.onclick=null;delete b.dataset.editing;
-  ({overview:shOverview,roles:shRoles,tags:shTags,audit:shAudit,channels:shChannels,rules:tvRules,automod:tvAutomod,words:tvWords,hooks:tvHooks,commands:shCommands,lists:shLists,feedback:shFeedback,decor:shDecor})[shPage](b);
+  ({overview:shOverview,roles:shRoles,tags:shTags,audit:shAudit,channels:shChannels,rules:tvRules,automod:tvAutomod,words:tvWords,hooks:tvHooks,commands:shCommands,lists:shLists,feedback:shFeedback,decor:shDecor,inbox:shInbox})[shPage](b);
   const m=$('sx').querySelector('.sx-main');if(m)m.scrollTop=0;
 }
 
@@ -308,3 +308,24 @@ async function shDecSave(){
   dcEditing=null;toast('Saved');shDecor($('sx_b'));
 }
 async function shDecDel(id){if(!(await askConfirm('Delete this decoration? Everyone who owns or wears it loses it.')))return;const {error}=await sb.rpc('delete_shop_decor',{did:id});if(error)return toast(error.message,true);await loadProfiles();shDecor($('sx_b'))}
+
+
+// ---------- Staff inbox: pick the channel where new reports and Feedback are posted ----------
+async function shInbox(b){
+  const sid=String(srvId);
+  const {data:s,error}=await sb.from('server_settings').select('*').eq('server_id',sid).maybeSingle();
+  if(error){b.innerHTML=shEmpty('Could not load settings.');return}
+  const chs=channels.filter(c=>!c.is_voice);
+  b.innerHTML=`<div class="sx-sub" style="margin-bottom:10px">New reports and Feedback are posted here by the bot as a small card. <b>Pick a channel only staff can read</b>: anyone who can read the channel can read what is posted in it.</div>
+   <select id="ib_ch" class="sx-in"><option value="">Off (don't post anywhere)</option>${chs.map(c=>`<option value="${c.id}">#${esc(c.name)}</option>`).join('')}</select>
+   <label class="sx-sub" style="display:block;margin:8px 0"><input id="ib_r" type="checkbox"> Post new reports</label>
+   <label class="sx-sub" style="display:block;margin:8px 0"><input id="ib_f" type="checkbox"> Post new Feedback (suggestions, emoji ideas, bug reports)</label>
+   <div class="sx-sub" style="margin-top:14px"><b>Donation thank-yous</b>: when someone donates on Ko-fi, the bot posts a thank-you here (Ko-fi setup is in setup/kofi.sql).</div>
+   <select id="ib_th" class="sx-in"><option value="">Off</option>${chs.map(c=>`<option value="${c.id}">#${esc(c.name)}</option>`).join('')}</select>
+   <div id="ib_m" class="sx-sub" style="min-height:16px"></div><div class="sx-bar">${shBtn('Save','shInboxSave()','blue')}</div>`;
+  $('ib_ch').value=(s&&s.inbox_channel)||'';$('ib_th').value=(s&&s.thank_channel)||'';$('ib_r').checked=!s||s.inbox_reports!==false;$('ib_f').checked=!s||s.inbox_feedback!==false;
+}
+async function shInboxSave(){
+  const f={server_id:String(srvId),inbox_channel:$('ib_ch').value||null,inbox_reports:$('ib_r').checked,inbox_feedback:$('ib_f').checked,thank_channel:$('ib_th').value||null};
+  const {error}=await sb.from('server_settings').upsert(f,{onConflict:'server_id'});const m=$('ib_m');
+  m.style.color=error?'#f23f43':'#23a55a';m.textContent=error?(/inbox_|thank_channel/.test(error.message)?'Run staff_inbox.sql and kofi.sql in Supabase first.':error.message):'Saved.'}

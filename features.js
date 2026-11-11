@@ -42,20 +42,22 @@ document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&
 // ---------- mute channels / servers, mark as read ----------
 let _muteFor=null,_muteData=null;
 function mutes(){if(!me)return {ch:{},srv:{}};if(_muteFor!==me.id){_muteFor=me.id;_muteData=LS.get('bc_mute_'+me.id,{ch:{},srv:{}})}return _muteData}
-function isMuted(kind,id){const t=mutes()[kind][id];return !!t&&(t===true||t>Date.now())}
+function isMuted(kind,id){const t=mutes()[kind][id];return !!t&&t!=='m'&&(t===true||t>Date.now())}
+const isMentOnly=cid=>!isMutedCh(cid)&&(mutes().ch[cid]==='m'||mutes().srv[chanSrv[cid]]==='m');
+const isMentOnlyKind=(k,id)=>mutes()[k][id]==='m';
 const isMutedCh=cid=>isMuted('ch',cid)||isMuted('srv',chanSrv[cid]);
 const isMutedSrv=sid=>isMuted('srv',sid);
-function setMute(kind,id,ms){const m=mutes();if(!ms)delete m[kind][id];else m[kind][id]=ms===Infinity?true:Date.now()+ms;LS.set('bc_mute_'+me.id,m);if(srvId)drawChannels();drawServerNav()}
+function setMute(kind,id,ms){const m=mutes();if(!ms)delete m[kind][id];else m[kind][id]=ms==='m'?'m':ms===Infinity?true:Date.now()+ms;LS.set('bc_mute_'+me.id,m);if(srvId)drawChannels();drawServerNav()}
 async function muteChoose(kind,id){
-  const ms=await askChoice('Mute for…',[['15 minutes',15*60e3],['1 hour',3600e3],['8 hours',8*3600e3],['24 hours',24*3600e3],['Until I turn it back on',Infinity]]);
+  const ms=await askChoice('Mute for…',[['Mentions only (until I change it)','m'],['15 minutes',15*60e3],['1 hour',3600e3],['8 hours',8*3600e3],['24 hours',24*3600e3],['Until I turn it back on',Infinity]]);
   if(ms)setMute(kind,id,ms);
 }
 function recountSrv(sv){unreadSrv[sv]=Object.keys(unreadCh).filter(c=>chanSrv[c]===sv).length;mentSrv[sv]=Object.keys(ment).filter(c=>chanSrv[c]===sv).reduce((a,c)=>a+ment[c],0);if(!unreadSrv[sv])delete unreadSrv[sv];if(!mentSrv[sv])delete mentSrv[sv]}
 function markChRead(id){delete unreadCh[id];delete ment[id];markRead(id);recountSrv(chanSrv[id]);if(srvId)drawChannels();drawServerNav()}
 function markSrvRead(sid){Object.keys(chanSrv).filter(c=>chanSrv[c]===sid).forEach(c=>{delete unreadCh[c];delete ment[c];markRead(c)});delete unreadSrv[sid];delete mentSrv[sid];if(srvId)drawChannels();drawServerNav()}
-const chanExtraMenu=id=>(isMuted('ch',id)?mi('🔔','Unmute channel',`setMute('ch','${id}',0)`):mi('🔕','Mute channel',`muteChoose('ch','${id}')`))+mi('✓','Mark as read',`markChRead('${id}')`)+sep;
+const chanExtraMenu=id=>(isMuted('ch',id)||isMentOnlyKind('ch',id)?mi('🔔',isMentOnlyKind('ch',id)?'Notify for all messages':'Unmute channel',`setMute('ch','${id}',0)`):mi('🔕','Mute / mentions only',`muteChoose('ch','${id}')`))+mi('✓','Mark as read',`markChRead('${id}')`)+sep;
 const srvExtraMenu=id=>{
-  let h=(isMuted('srv',id)?mi('🔔','Unmute server',`setMute('srv','${id}',0)`):mi('🔕','Mute server',`muteChoose('srv','${id}')`))+mi('✓','Mark server as read',`markSrvRead('${id}')`);
+  let h=(isMuted('srv',id)||isMentOnlyKind('srv',id)?mi('🔔',isMentOnlyKind('srv',id)?'Notify for all messages':'Unmute server',`setMute('srv','${id}',0)`):mi('🔕','Mute / mentions only',`muteChoose('srv','${id}')`))+mi('✓','Mark server as read',`markSrvRead('${id}')`);
   if(id===srvId&&(isStaff()||defRole==='owner'))h+=sep+mi('🔗','Create invite link',`makeInvite('${id}')`)+mi('☺','Add custom emoji',`addEmoji('${id}')`)+mi('🗑','Manage custom emoji',`manageEmoji('${id}')`);
   return h+sep;
 };

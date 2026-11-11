@@ -460,7 +460,7 @@ function listen(){
    })
    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},async p=>{
      if(!profiles[p.new.sender_id])await loadProfiles(60000);
-     if(cur.type==='ch'&&cur.id===p.new.channel_id){add(p.new);if(mentionsMe(p.new)&&!isMutedCh(p.new.channel_id))ping()}else if(p.new.sender_id!==me.id&&!isMutedCh(p.new.channel_id)){const cid=p.new.channel_id,sv=chanSrv[cid];unreadCh[cid]=1;if(sv)unreadSrv[sv]=(unreadSrv[sv]||0)+1;
+     if(cur.type==='ch'&&cur.id===p.new.channel_id){add(p.new);if(mentionsMe(p.new)&&!isMutedCh(p.new.channel_id))ping()}else if(p.new.sender_id!==me.id&&!isMutedCh(p.new.channel_id)&&!(isMentOnly(p.new.channel_id)&&!mentionsMe(p.new))){const cid=p.new.channel_id,sv=chanSrv[cid];unreadCh[cid]=1;if(sv)unreadSrv[sv]=(unreadSrv[sv]||0)+1;
        if(mentionsMe(p.new)){ment[cid]=(ment[cid]||0)+1;if(sv)mentSrv[sv]=(mentSrv[sv]||0)+1;const ch=channels.find(x=>x.id===cid);toast((profiles[p.new.sender_id]||{username:'Someone'}).username+' mentioned you'+(ch?' in #'+ch.name:''));ping()}
        if(srvId)drawChannels();drawServerNav()}})
    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages'},p=>{msgCache[p.new.id]=p.new;const d=$('m_'+p.new.id),t=d&&d.querySelector('[data-t]');if(t)t.innerHTML=fmt(p.new)+' <span class="text-[10px] text-[#949ba4]">(edited)</span>'})
@@ -619,6 +619,7 @@ async function runCmd(line){
   if(cmd==='iplog'){const {data,error}=await sb.rpc('get_ip_log_all',{lim:30});if(error)return sys(error.message);if(!data.length)return sys('No log entries yet.');data.forEach(r=>sys((r.success?'✓':'✗')+' '+r.action+' "'+r.username_tried+'" from '+r.ip+' — '+new Date(r.created_at).toLocaleString()));return;}
   if(cmd==='reload'){if(!(await askConfirm('Reload the page for everyone online right now?')))return;const {error}=await sb.from('app_signals').insert({kind:'reload'});return sys(error?'Reload failed: '+error.message+(error.code?' ('+error.code+')':''):'Reload sent.')}
   if(cmd==='reports')return showReports();
+  if(cmd==='leaderboard'||cmd==='lb')return openLeaderboard();
   if(cmd==='bans')return showBans();
   let u=Object.values(profiles).find(p=>p.username===(name||'').toLowerCase().replace(/^@/,''));
   if(!u&&name){ // not in the list already loaded in the page: ask the database directly (the list can be incomplete or out of date)
@@ -665,6 +666,7 @@ let CMD_INFO=[
 ["help","","Show what BeanBot and the staff commands do","",false],
 ["cmds","","List every BeanBot command, custom ones too","",false],
 ["balance","[user]","Show your bean balance","",false],
+["leaderboard","","Richest, longest streaks and most active","",false],
 ["topbeans","","The five richest people in beans","",false],
 ["luck","","See if a luck event is running","",false],
 ["coinflip","100 heads","Bet beans on a coin flip","",false],
@@ -959,6 +961,7 @@ function showProfile(uid){
   <div class="px-5 pt-3 pb-5">
    <div class="flex items-center flex-wrap gap-x-2 gap-y-1"><span class="font-bold text-xl" style="${nameCss(p)}">${esc(dn(p))}</span>${isBot(p)?BOTBADGE:''}${r?tag(p,r):''}${utag(p)}</div>
    <div class="text-sm text-[#949ba4] mt-0.5">@${esc(p.username)}${p.pronouns?' · '+esc(p.pronouns):''}</div>
+   <div id="vpbadges" class="mt-2 flex flex-wrap gap-1"></div>
    <div id="vpstats" class="mt-1.5 text-xs text-[#949ba4] space-y-0.5"></div>
    ${p.bio?`<p class="mt-3 text-sm text-[#dbdee1] break-words whitespace-pre-wrap">${linkify(p.bio)}</p>`:''}
    ${friendHtml?`<div class="mt-4 flex flex-wrap gap-2">${friendHtml}</div>`:''}
@@ -967,6 +970,7 @@ function showProfile(uid){
   </div>`;
   {const g=p.card_grad||{};$('vpc').style.background=HEX.test(g.a||'')&&HEX.test(g.b||'')?`linear-gradient(180deg,${g.a},${g.b})`:''}
   $('vp').classList.remove('hidden');
+  sb.rpc('bc_badges',{uid:uid}).then(({data})=>{const el=$('vpbadges');if(el&&data)el.innerHTML=badgeList(data).map(x=>`<span title="${esc(x[1])}" class="text-[11px] font-bold px-2 py-0.5 rounded-full" style="background:rgba(255,255,255,.1);color:#f2f3f5">${x[0]}</span>`).join('')});
   sb.rpc('bc_profile_stats',{uid}).then(({data})=>{const x=Array.isArray(data)?data[0]:data,el=$('vpstats');
     if(x&&el)el.innerHTML='<div>#️⃣ account #'+x.account_no+'</div><div>💬 '+Number(x.msgs).toLocaleString()+' messages</div>'})}
 async function blockUser(uid){if(!(await askConfirm('Block '+dn(profiles[uid])+'? You will stop seeing their messages. Undo with /unblock username')))return;const {error}=await sb.from('blocks').insert({blocked:uid});if(error)return alert(error.message);blocked.add(uid);if(cur.type==='ch')openChannel(cur.id);else if(cur.type==='dm')openDM(cur.id)}
@@ -1207,7 +1211,9 @@ function createGroupPeer(peerId,initiator){
       setTileVideo(peerId,e.streams[0]);
       e.track.onended=()=>clearTileVideo(peerId);
     }else{
-      let a=document.getElementById('ga_'+peerId);if(!a){a=document.createElement('audio');a.id='ga_'+peerId;a.autoplay=true;document.body.appendChild(a)}
+      let a=document.getElementById('ga_'+peerId);
+      if(a&&a.srcObject&&e.streams[0]&&a.srcObject.id!==e.streams[0].id){playShareAudio(peerId,e.streams[0]);return}
+      if(!a){a=document.createElement('audio');a.id='ga_'+peerId;a.autoplay=true;document.body.appendChild(a)}
       a.srcObject=e.streams[0];applyVol(peerId);applyDeafen();watchSpeaking(peerId,e.streams[0]);
     }
   };
@@ -1248,7 +1254,7 @@ async function handleGroupSignal(msg){
 function closeGroupPeer(peerId){
   const pcx=groupPeers[peerId];if(pcx){if(!groupLeaving)callSound('leave');pcx.close();delete groupPeers[peerId]}
   delete groupVideoSenders[peerId];
-  const a=document.getElementById('ga_'+peerId);if(a){a.srcObject=null;a.remove()}
+  const a=document.getElementById('ga_'+peerId);if(a){a.srcObject=null;a.remove()}clearShareAudio(peerId);
   removeTile(peerId);
 }
 
@@ -1378,8 +1384,8 @@ async function tuneSender(sender,kind){
 }
 async function sendShareAudio(at){
   try{
-    if(activeCallWith&&pc){if(!shareAudioSender){shareAudioSender=pc.addTrack(at,localStream);await renegotiate(pc,callCh)}else await shareAudioSender.replaceTrack(at)}
-    else if(groupCallActive){for(const pid of Object.keys(groupPeers)){const pcx=groupPeers[pid];if(!groupShareAudioSenders[pid]){groupShareAudioSenders[pid]=pcx.addTrack(at,groupLocalStream);await renegotiate(pcx,groupCallCh,pid)}else await groupShareAudioSenders[pid].replaceTrack(at)}}
+    if(activeCallWith&&pc){if(!shareAudioSender){shareAudioSender=pc.addTrack(at,new MediaStream([at]));await renegotiate(pc,callCh)}else await shareAudioSender.replaceTrack(at)}
+    else if(groupCallActive){for(const pid of Object.keys(groupPeers)){const pcx=groupPeers[pid];if(!groupShareAudioSenders[pid]){groupShareAudioSenders[pid]=pcx.addTrack(at,new MediaStream([at]));await renegotiate(pcx,groupCallCh,pid)}else await groupShareAudioSenders[pid].replaceTrack(at)}}
   }catch(e){}
 }
 function stopShareAudio(){
@@ -1469,10 +1475,13 @@ function stopAllWatching(){Object.keys(speakWatch).forEach(stopWatching)}
 // ----- per-person volume (remembered in this browser) -----
 const volKey=id=>'bc_vol_'+id;
 function getVol(id){try{const v=parseInt(localStorage.getItem(volKey(id)),10);return Number.isFinite(v)?Math.min(100,Math.max(0,v)):100}catch(e){return 100}}
-function applyVol(id){const a=document.getElementById('ga_'+id)||$('remoteAudio');if(a)a.volume=getVol(id)/100}
+function applyVol(id){const a=document.getElementById('ga_'+id)||$('remoteAudio');if(a)a.volume=getVol(id)/100;const sa=document.getElementById('sa_'+id);if(sa)sa.volume=getVol(id)/100}
+// sound that someone shares with their screen arrives as its own stream and plays through its own element
+function playShareAudio(peerId,stream){let a=document.getElementById('sa_'+peerId);if(!a){a=document.createElement('audio');a.id='sa_'+peerId;a.autoplay=true;document.body.appendChild(a)}a.srcObject=stream;applyVol(peerId);applyDeafen();const p=a.play&&a.play();if(p&&p.catch)p.catch(()=>{})}
+function clearShareAudio(peerId){document.querySelectorAll(peerId?'#sa_'+peerId:'audio[id^="sa_"]').forEach(a=>{a.srcObject=null;a.remove()})}
 
 // ----- deafen: silences everyone and mutes your mic (like Discord) -----
-function applyDeafen(){document.querySelectorAll('#remoteAudio,audio[id^="ga_"]').forEach(a=>{a.muted=deafened})}
+function applyDeafen(){document.querySelectorAll('#remoteAudio,audio[id^="ga_"],audio[id^="sa_"]').forEach(a=>{a.muted=deafened})}
 function paintDeafen(){const b=$('deafenbtn');if(!b)return;b.textContent=deafened?'🙉':'🎧';b.classList.toggle('bg-[#f23f43]',deafened);b.title=deafened?'Undeafen':'Deafen'}
 function paintMute(){$('mutebtn').textContent=muted?'🔇':'🎤';$('mutebtn').classList.toggle('bg-[#f23f43]',muted)}
 function toggleDeafen(){
@@ -1588,7 +1597,9 @@ function setupPeerConnection(peerId){
       setTileVideo(peerId,e.streams[0]);
       e.track.onended=()=>clearTileVideo(peerId);
     }else{
-      let a=$('remoteAudio');if(!a){a=document.createElement('audio');a.id='remoteAudio';a.autoplay=true;document.body.appendChild(a)}
+      let a=$('remoteAudio');
+      if(a&&a.srcObject&&e.streams[0]&&a.srcObject.id!==e.streams[0].id){playShareAudio(peerId,e.streams[0]);return}
+      if(!a){a=document.createElement('audio');a.id='remoteAudio';a.autoplay=true;document.body.appendChild(a)}
       a.srcObject=e.streams[0];applyVol(peerId);applyDeafen();watchSpeaking(peerId,e.streams[0]);
     }
   };
@@ -1643,7 +1654,7 @@ function endCall(reason){
   if(pc){pc.close();pc=null}
   if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null}
   if(callCh){sb.removeChannel(callCh);callCh=null}
-  const a=$('remoteAudio');if(a)a.srcObject=null;
+  const a=$('remoteAudio');if(a)a.srcObject=null;clearShareAudio();
   resetVideoState();clearAllTiles();
   activeCallWith=null;callState='idle';incomingFrom=null;muted=false;
   $('callbar').classList.add('hidden');$('ringbanner').classList.add('hidden');
@@ -1981,7 +1992,7 @@ async function loadUnread(){
     const cids=Object.keys(chanSrv);
     if(cids.length){
       const {data:cms}=await sb.from('messages').select('channel_id,sender_id,content,created_at').in('channel_id',cids).neq('sender_id',me.id).gt('created_at',init.toISOString()).limit(300);
-      (cms||[]).forEach(m=>{if(blocked.has(m.sender_id)||isMutedCh(m.channel_id)||!after(m.created_at,m.channel_id))return;const sv=chanSrv[m.channel_id];
+      (cms||[]).forEach(m=>{if(blocked.has(m.sender_id)||isMutedCh(m.channel_id)||(isMentOnly(m.channel_id)&&!mentionsMe(m))||!after(m.created_at,m.channel_id))return;const sv=chanSrv[m.channel_id];
         if(!unreadCh[m.channel_id]){unreadCh[m.channel_id]=1;if(sv)unreadSrv[sv]=(unreadSrv[sv]||0)+1}
         if(mentionsMe(m)){ment[m.channel_id]=(ment[m.channel_id]||0)+1;if(sv)mentSrv[sv]=(mentSrv[sv]||0)+1}});
       if(typeof drawServerNav==='function')drawServerNav();
@@ -2494,3 +2505,30 @@ $('u').addEventListener('keydown',e=>{if(e.key==='Enter'&&!$('p').value){e.preve
   msgs.addEventListener('touchcancel',stop,{passive:true});
   msgs.addEventListener('contextmenu',e=>{if(fired)e.preventDefault()},true);
 }
+
+
+// ===== milestone badges + leaderboards =====
+function badgeList(d){
+  const out=[],days=d.created_at?(Date.now()-new Date(d.created_at))/864e5:0,st=d.best_streak||0,rk=d.beans_rank||0;
+  [[730,'👑 2 years','Here for 2 years'],[365,'🎂 1 year','Here for a year'],[180,'🌿 6 months','Here for 6 months'],[30,'🌱 1 month','Here for a month']].some(([n,l,t])=>days>=n&&out.push([l,t]));
+  [[365,'🏆 365-day streak','Claimed daily beans 365 days in a row'],[100,'💯 100-day streak','Claimed daily beans 100 days in a row'],[30,'🔥 30-day streak','Claimed daily beans 30 days in a row'],[7,'✨ 7-day streak','Claimed daily beans 7 days in a row']].some(([n,l,t])=>st>=n&&out.push([l,t]));
+  if(rk>=1&&rk<=3)out.push([['🥇','🥈','🥉'][rk-1]+' Top '+rk+' richest','Ranked #'+rk+' in beans']);else if(rk>=1&&rk<=10)out.push(['💰 Top 10 richest','Ranked #'+rk+' in beans']);
+  return out}
+async function openLeaderboard(tab){
+  tab=tab||'beans';const {data,error}=await sb.rpc('bc_leaderboards');
+  if(error)return toast(/bc_leaderboards/.test(error.message)?'Run badges_leaderboards.sql in Supabase first.':error.message,true);
+  const T={beans:['🫘 Richest','beans'],streak:['🔥 Longest streak','days'],active:['💬 Most active (30 days)','messages']};
+  const rows=((data||{})[tab]||[]).map((r,i)=>{const p=profiles[r.id]||{username:'?'};return `<div class="flex items-center gap-3 p-2 rounded bg-[#2b2d31]"><span class="w-6 text-center font-black">${['🥇','🥈','🥉'][i]||i+1}</span>${av(p,6)}<span class="flex-1 truncate font-semibold" style="${nameCss(p)}">${esc(dn(p))}</span><span class="text-sm text-[#b5bac1]">${Number(r.v).toLocaleString()} ${T[tab][1]}</span></div>`}).join('')||'<p class="text-sm text-[#949ba4] p-2">Nobody yet.</p>';
+  const tabs=Object.entries(T).map(([k,v])=>`<button onclick="closeLb();openLeaderboard('${k}')" class="px-3 py-1.5 rounded-full text-xs font-bold ${k===tab?'bg-[#5865f2] text-white':'bg-[#383a40] text-[#b5bac1]'}">${v[0]}</button>`).join('');
+  closeLb();const o=document.createElement('div');o.id='lbov';o.style.cssText='position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.7)';
+  o.innerHTML=`<div class="bg-[#313338] rounded-xl p-5 w-full max-w-md max-h-[85vh] overflow-auto"><div class="flex justify-between items-center mb-3"><h3 class="text-lg font-black">🏆 Leaderboards</h3><button onclick="closeLb()" class="text-xl text-[#949ba4] hover:text-white">×</button></div><div class="flex flex-wrap gap-2 mb-3">${tabs}</div><div class="space-y-1.5">${rows}</div></div>`;
+  o.onmousedown=e=>{if(e.target===o)closeLb()};document.body.appendChild(o)}
+function closeLb(){const o=$('lbov');if(o)o.remove()}
+
+// search filter row: writes from:/after:/before:/in: into the search box, which extras.js already understands
+function sqSync(){
+  let v=$('sq').value.replace(/\b(from|after|before):\S+/gi,'').replace(/\bin:server\b/gi,'').replace(/\s+/g,' ').trim();
+  const u=$('squ').value.trim().replace(/^@/,'').replace(/\s+/g,''),a=$('sqa').value,b=$('sqb').value;
+  if(u)v+=' from:'+u;if(a)v+=' after:'+a;if(b)v+=' before:'+b;if($('sqs').value==='srv')v+=' in:server';
+  $('sq').value=v.trim();doSearch()}
+['squ','sqa','sqb','sqs'].forEach(k=>$(k).addEventListener(k==='squ'?'input':'change',()=>{clearTimeout(searchT);searchT=setTimeout(sqSync,k==='squ'?400:0)}));

@@ -1,9 +1,10 @@
 // Donation page + an always-visible side tab. Edit this block only.
 const DONATE={
-  url:'https://ko-fi.com/beancord',                 // <- paste your donation link here (Ko-fi, PayPal.me, Cash App, Stripe...). Empty = button shows "coming soon".
+  url:'',                 // <- paste your donation link here (Ko-fi, PayPal.me, Cash App, Stripe...). Empty = button shows "coming soon".
   title:'Support BEANCORD',
   blurb:'BEANCORD is built and paid for by one person. Every donation goes straight into hosting, so the site stays fast and ad-free.',
-  goalName:'Monthly hosting', goalNow:0, goalMax:25,   // dollars; set goalMax to 0 to hide the bar
+  goalName:'Monthly hosting', goalMax:25,   // dollars; set goalMax to 0 to hide the bar
+  monthly:true,           // true: the bar restarts every month. false: it counts everything ever donated.
   perks:['💖 Our eternal gratitude','🫘 Ask about bonus beans for supporters','🎨 Early access to new features']
 };
 (function(){
@@ -36,17 +37,22 @@ const DONATE={
   const tab=document.createElement('button');tab.id='dn-tab';tab.title='Support BEANCORD';tab.textContent='💖 SUPPORT';tab.onclick=()=>window.openDonate();document.body.appendChild(tab);
   window.openDonate=function(){
     if(document.getElementById('dn-ov'))return;
-    const D=DONATE,pct=D.goalMax>0?Math.min(100,Math.round(D.goalNow/D.goalMax*100)):0;
+    const D=DONATE,pct=0;
     const ov=document.createElement('div');ov.id='dn-ov';
     const e=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
     ov.innerHTML=`<div id="dn-card"><button id="dn-x" aria-label="Close">×</button><div id="dn-heart">💖</div><h2>${e(D.title)}</h2><p>${e(D.blurb)}</p>
-      ${D.goalMax>0?`<div class="sx-sub" style="font-size:12px;color:#b9bcc6;display:flex;justify-content:space-between"><span>${e(D.goalName)}</span><span>$${D.goalNow} / $${D.goalMax}</span></div><div class="dn-bar"><i style="width:${pct}%"></i></div>`:''}
+      ${D.goalMax>0?`<div class="sx-sub" style="font-size:12px;color:#b9bcc6;display:flex;justify-content:space-between"><span>${e(D.goalName)}</span><span id="dn-amt">$0 / $${D.goalMax}</span></div><div class="dn-bar"><i style="width:${pct}%"></i></div>`:''}
+      <div id="dn-wall" style="margin-top:6px"></div>
       <ul class="dn-perks">${D.perks.map(x=>`<li>${e(x)}</li>`).join('')}</ul>
       ${D.url?`<a id="dn-go" href="${e(D.url)}" target="_blank" rel="noopener noreferrer">Donate 💖</a>`:`<span id="dn-go" style="opacity:.6;cursor:default">Donations opening soon</span>`}
       <p style="font-size:11px;margin:12px 0 0;color:#80848e">Donations are optional, non-refundable, and don't change your account rules.</p></div>`;
     const close=()=>{ov.remove();document.removeEventListener('keydown',k)},k=ev=>{if(ev.key==='Escape')close()};
     ov.addEventListener('mousedown',ev=>{if(ev.target===ov)close()});ov.querySelector('#dn-x').onclick=close;document.addEventListener('keydown',k);
     document.body.appendChild(ov);
+    try{if(typeof sb!=='undefined')sb.rpc('bc_donation_stats').then(({data})=>{if(!data||!document.body.contains(ov))return;
+      const now=Number(D.monthly?data.month:data.total)||0,p=D.goalMax>0?Math.min(100,Math.round(now/D.goalMax*100)):0,bar=ov.querySelector('.dn-bar i'),amt=ov.querySelector('#dn-amt');
+      if(bar)bar.style.width=p+'%';if(amt)amt.textContent='$'+Math.round(now*100)/100+' / $'+D.goalMax;
+      const w=ov.querySelector('#dn-wall');if(w&&(data.supporters||[]).length)w.innerHTML='<div style="font-size:11px;color:#949ba4;margin:4px 0 8px;text-transform:uppercase;letter-spacing:.08em">Recent supporters</div>'+data.supporters.map(n=>`<span style="display:inline-block;margin:2px;padding:3px 10px;border-radius:99px;background:rgba(255,79,163,.18);color:#ffc2e0;font-size:12px;font-weight:700">💖 ${e(n)}</span>`).join('')})}catch(x){}
     for(let i=0;i<14;i++){const h=document.createElement('span');h.className='dn-fl';h.textContent=['💖','✨','🫘','💗'][i%4];h.style.cssText=`left:${Math.random()*100}%;font-size:${14+Math.random()*16}px;animation-duration:${4+Math.random()*4}s;animation-delay:${Math.random()*3}s`;ov.appendChild(h)}
   };
 })();
