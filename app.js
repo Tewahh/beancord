@@ -188,7 +188,7 @@ async function start(){
   try{const dv=await getDeviceIds();await sb.rpc('bc_register_device',{hw:dv.h,dev:dv.d})}catch(e){}
   try{const dv=await getDeviceIds();const {data:devBanned,error:devErr}=await sb.rpc('register_device',{h:dv.h,d:dv.d});if(!devErr&&devBanned===true)return kickDevice()}catch(e){}
   pushRebind();
-  await loadFriends();await loadBlocks();await loadDmPrefs();await loadShopTags();await loadShopDecor();await loadSiteLists();await loadChanMap();drawMeBox();
+  await loadFriends();await loadBlocks();await loadDmPrefs();await loadSupporters();await loadShopTags();await loadShopDecor();await loadSiteLists();await loadChanMap();drawMeBox();
   await loadGroups();await loadUnread();await loadServers();await redeemInvite();loadCustomEmoji();const d=servers.find(x=>x.is_default);if(_inviteOpen)openServer(_inviteOpen);else if(d)openServer(d.id);else showDMs();listen();track();loadTurn();initExtras();
 }
 async function loadServers(){const {data}=await sb.from('servers').select('*').order('created_at');servers=data||[];drawServerNav()}
@@ -236,7 +236,7 @@ function drawMembers(){
       }
       const tagline=(until(p,'banned_until')?'🚫 banned':'')+(until(p,'banned_until')&&until(p,'muted_until')?' · ':'')+(until(p,'muted_until')?'🔇 muted':'');
       const onlineNow=u===me.id||online.has(u);
-      return `<div data-uid="${u}" class="py-1.5 px-1.5 -mx-1.5 rounded-md hover:bg-[#35373c] transition-colors"><div class="flex items-center gap-2.5"><span onclick="showProfile('${u}')" class="relative flex-shrink-0 cursor-pointer">${av(p,9)}<span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#2b2d31]" style="background:${stColor(u)}"></span></span><div class="min-w-0 flex-1 cursor-pointer" onclick="showProfile('${u}')"><div class="flex items-center justify-between gap-2"><span class="text-sm font-semibold truncate" style="${nameCss(p)}">${esc(nm(m))}</span>${utag(p)?`<span class="flex-shrink-0">${utag(p)}</span>`:''}</div>${p.bio?`<div class="text-[11px] text-[#949ba4] truncate">${esc(p.bio)}</div>`:''}${csLine(u)}${tagline?`<div class="text-[10px] text-[#f23f43] truncate">${tagline}</div>`:''}</div></div>${acts.length?`<div class="flex items-center gap-2 mt-1 pl-[2.75rem] text-[10px] text-[#949ba4]">${acts.join('')}</div>`:''}</div>`
+      return `<div data-uid="${u}" class="py-1.5 px-1.5 -mx-1.5 rounded-md hover:bg-[#35373c] transition-colors"><div class="flex items-center gap-2.5"><span onclick="showProfile('${u}')" class="relative flex-shrink-0 cursor-pointer">${av(p,9)}<span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#2b2d31]" style="background:${stColor(u)}"></span></span><div class="min-w-0 flex-1 cursor-pointer" onclick="showProfile('${u}')"><div class="flex items-center justify-between gap-2"><span class="text-sm font-semibold truncate" style="${nameCss(p)}">${esc(nm(m))}${supIds.has(u)?' <span title="Supporter" style="font-size:11px">💖</span>':''}</span>${utag(p)?`<span class="flex-shrink-0">${utag(p)}</span>`:''}</div>${p.bio?`<div class="text-[11px] text-[#949ba4] truncate">${esc(p.bio)}</div>`:''}${csLine(u)}${tagline?`<div class="text-[10px] text-[#f23f43] truncate">${tagline}</div>`:''}</div></div>${acts.length?`<div class="flex items-center gap-2 mt-1 pl-[2.75rem] text-[10px] text-[#949ba4]">${acts.join('')}</div>`:''}</div>`
     }).join('');
     const onl=g.items.filter(m=>m.user_id===me.id||online.has(m.user_id)).length;
     return `<div class="${closed?'mb-2':'mb-5'}"><button onclick="toggleRoleGroup('${g.key}')" class="w-full flex items-center gap-2 px-1.5 ${closed?'':'mb-2'} text-left hover:opacity-80"><span class="inline-block w-3 text-center text-[10px] text-[#949ba4]">${closed?'▸':'▾'}</span><span class="text-[9px] font-black uppercase px-1.5 py-0.5 rounded text-white" style="background:${g.color||'#4e5058'}">${esc(g.label)}</span><span class="text-[11px] text-[#80848e]">— ${g.items.length}${closed&&onl?` · <span class="text-[#23a55a]">${onl} online</span>`:''}</span></button>${closed?'':`<div class="space-y-0.5">${rows}</div>`}</div>`;
@@ -970,7 +970,7 @@ function showProfile(uid){
   </div>`;
   {const g=p.card_grad||{};$('vpc').style.background=HEX.test(g.a||'')&&HEX.test(g.b||'')?`linear-gradient(180deg,${g.a},${g.b})`:''}
   $('vp').classList.remove('hidden');
-  sb.rpc('bc_badges',{uid:uid}).then(({data})=>{const el=$('vpbadges');if(el&&data)el.innerHTML=badgeList(data).map(x=>`<span title="${esc(x[1])}" class="text-[11px] font-bold px-2 py-0.5 rounded-full" style="background:rgba(255,255,255,.1);color:#f2f3f5">${x[0]}</span>`).join('')});
+  Promise.all([sb.rpc('bc_badges',{uid:uid}),sb.from('supporters').select('user_id').eq('user_id',uid).maybeSingle()]).then(([{data},{data:sp}])=>{const el=$('vpbadges');if(el&&data)el.innerHTML=badgeList({...data,supporter:!!sp}).map(x=>`<span title="${esc(x[1])}" class="text-[11px] font-bold px-2 py-0.5 rounded-full" style="background:rgba(255,255,255,.1);color:#f2f3f5">${x[0]}</span>`).join('')});
   sb.rpc('bc_profile_stats',{uid}).then(({data})=>{const x=Array.isArray(data)?data[0]:data,el=$('vpstats');
     if(x&&el)el.innerHTML='<div>#️⃣ account #'+x.account_no+'</div><div>💬 '+Number(x.msgs).toLocaleString()+' messages</div>'})}
 async function blockUser(uid){if(!(await askConfirm('Block '+dn(profiles[uid])+'? You will stop seeing their messages. Undo with /unblock username')))return;const {error}=await sb.from('blocks').insert({blocked:uid});if(error)return alert(error.message);blocked.add(uid);if(cur.type==='ch')openChannel(cur.id);else if(cur.type==='dm')openDM(cur.id)}
@@ -2509,7 +2509,7 @@ $('u').addEventListener('keydown',e=>{if(e.key==='Enter'&&!$('p').value){e.preve
 
 // ===== milestone badges + leaderboards =====
 function badgeList(d){
-  const out=[],days=d.created_at?(Date.now()-new Date(d.created_at))/864e5:0,st=d.best_streak||0,rk=d.beans_rank||0;
+  const out=d.supporter?[['💖 Supporter','Supports BEANCORD on Ko-fi']]:[];const days=d.created_at?(Date.now()-new Date(d.created_at))/864e5:0,st=d.best_streak||0,rk=d.beans_rank||0;
   [[730,'👑 2 years','Here for 2 years'],[365,'🎂 1 year','Here for a year'],[180,'🌿 6 months','Here for 6 months'],[30,'🌱 1 month','Here for a month']].some(([n,l,t])=>days>=n&&out.push([l,t]));
   [[365,'🏆 365-day streak','Claimed daily beans 365 days in a row'],[100,'💯 100-day streak','Claimed daily beans 100 days in a row'],[30,'🔥 30-day streak','Claimed daily beans 30 days in a row'],[7,'✨ 7-day streak','Claimed daily beans 7 days in a row']].some(([n,l,t])=>st>=n&&out.push([l,t]));
   if(rk>=1&&rk<=3)out.push([['🥇','🥈','🥉'][rk-1]+' Top '+rk+' richest','Ranked #'+rk+' in beans']);else if(rk>=1&&rk<=10)out.push(['💰 Top 10 richest','Ranked #'+rk+' in beans']);
@@ -2532,3 +2532,7 @@ function sqSync(){
   if(u)v+=' from:'+u;if(a)v+=' after:'+a;if(b)v+=' before:'+b;if($('sqs').value==='srv')v+=' in:server';
   $('sq').value=v.trim();doSearch()}
 ['squ','sqa','sqb','sqs'].forEach(k=>$(k).addEventListener(k==='squ'?'input':'change',()=>{clearTimeout(searchT);searchT=setTimeout(sqSync,k==='squ'?400:0)}));
+
+// supporter badge (set by the Ko-fi webhook): a 💖 next to the name in the member list
+let supIds=new Set();
+async function loadSupporters(){try{const {data}=await sb.from('supporters').select('user_id');supIds=new Set((data||[]).map(x=>x.user_id))}catch(e){}}

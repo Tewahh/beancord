@@ -43,6 +43,7 @@ const DONATE={
     ov.innerHTML=`<div id="dn-card"><button id="dn-x" aria-label="Close">×</button><div id="dn-heart">💖</div><h2>${e(D.title)}</h2><p>${e(D.blurb)}</p>
       ${D.goalMax>0?`<div class="sx-sub" style="font-size:12px;color:#b9bcc6;display:flex;justify-content:space-between"><span>${e(D.goalName)}</span><span id="dn-amt">$0 / $${D.goalMax}</span></div><div class="dn-bar"><i style="width:${pct}%"></i></div>`:''}
       <div id="dn-wall" style="margin-top:6px"></div>
+      <p style="font-size:12.5px;margin:14px 0 0;color:#ffc2e0">💖 Want the <b>Supporter badge</b>? Write your <b>BEANCORD username</b> in your Ko-fi message and it's added to your profile and member list automatically.</p>
       <ul class="dn-perks">${D.perks.map(x=>`<li>${e(x)}</li>`).join('')}</ul>
       ${D.url?`<a id="dn-go" href="${e(D.url)}" target="_blank" rel="noopener noreferrer">Donate 💖</a>`:`<span id="dn-go" style="opacity:.6;cursor:default">Donations opening soon</span>`}
       <p style="font-size:11px;margin:12px 0 0;color:#80848e">Donations are optional, non-refundable, and don't change your account rules.</p></div>`;
