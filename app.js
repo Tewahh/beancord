@@ -134,6 +134,8 @@ const isStaff=()=>['manage_server','manage_roles','manage_channels','kick_member
 const canBan=u=>myPerm('ban_members')&&myRank()>rankOf(u);
 const canMute=u=>myPerm('timeout_members')&&myRank()>rankOf(u);
 const canManage=u=>myPerm('kick_members')&&myRank()>rankOf(u);
+// who may delete a message: its sender, or someone with Manage Messages who OUTRANKS the sender (owner outranks everyone). Equal rank is not enough. BeanBot's own messages can be removed by anyone with Manage Messages.
+const canDeleteMsg=m=>{if(!m)return false;if(m.sender_id===me.id)return true;if(!m.channel_id||!myPerm('manage_messages'))return false;return isBot(profiles[m.sender_id])||myRank()>rankOf(m.sender_id)};
 // channel limits are roles too: "who can read / type" = this role and everyone above it
 const roleNeed=(rid,legacy)=>{if(rid){const r=croles.find(x=>x.id===rid);if(r)return Math.max(1,r.position||0)}return (legacy||1)>=7?OWNER_RANK:0};
 const canReadChan=c=>!!c&&myRank()>=roleNeed(c.min_read_role,c.min_read_rank);
@@ -250,7 +252,7 @@ function toggleRoleGroup(k){
   drawMembers();
 }
 async function kick(uid){if(!(await askConfirm('Kick this member?')))return;const {error}=await sb.from('server_members').delete().eq('server_id',srvId).eq('user_id',uid);if(error)alert(error.message);openServer(srvId)}
-async function delMsg(id){const {error}=await sb.from(tblOf(msgCache[id])).delete().eq('id',id);if(error)return alert(error.message);const e=$('m_'+id);if(e)e.remove()}
+async function delMsg(id){const m0=msgCache[id];if(m0&&!canDeleteMsg(m0))return alert('You can only delete messages from people ranked below you.');const {error}=await sb.from(tblOf(msgCache[id])).delete().eq('id',id);if(error)return alert(error.message);const e=$('m_'+id);if(e)e.remove()}
 function drawChannels(){
   const groups=[],seen={};
   channels.forEach(c=>{const k=c.category||'';if(!(k in seen)){seen[k]=[];groups.push(k)}seen[k].push(c)});
@@ -374,7 +376,7 @@ function row(m,pm){
   const p=profiles[m.sender_id]||{username:'unknown'};
   const r=cur.type==='ch'?roles[m.sender_id]:null;
   const t=new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  const del=m.sender_id===me.id||(cur.type==='ch'&&myPerm('manage_messages'));
+  const del=cur.type==='ch'?canDeleteMsg(m):m.sender_id===me.id;
   const compact=!!pm&&pm.sender_id===m.sender_id&&!m.reply_to&&!isBot(p)&&dayKey(pm.created_at)===dayKey(m.created_at)&&(new Date(m.created_at)-new Date(pm.created_at))<300000;
   const t2=new Date(m.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
   return `<div id="m_${m.id}" class="group flex gap-3 ${compact?'!mt-0.5 ':''}${mentionsMe(m)?'bg-yellow-500/10 border-l-2 border-yellow-500 pl-2':''}">${compact?`<span class="w-9 flex-shrink-0 text-[9px] leading-5 text-center text-[#949ba4] opacity-0 group-hover:opacity-100 select-none whitespace-nowrap">${t2}</span>`:`<span onclick="showProfile('${m.sender_id}')" class="cursor-pointer flex-shrink-0">${av(p,9)}</span>`}<div class="min-w-0">${compact?`${m.pinned?'📌 ':''}${del?`<button onclick="delMsg('${m.id}')" class="hidden group-hover:inline float-right text-[10px] text-[#949ba4] hover:text-[#f23f43]">delete</button>`:''}`:`<span onclick="showProfile('${m.sender_id}')" class="font-bold text-sm cursor-pointer hover:underline" style="${nameCss(p)}">${esc(dn(p))}</span>${isBot(p)?' '+BOTBADGE:''}${utag(p)}${r&&r!=='member'?` ${tag(p,r)}`:''} <span class="text-[10px] text-[#949ba4]">${t}</span>${m.pinned?' 📌':''}${del?` <button onclick="delMsg('${m.id}')" class="hidden group-hover:inline text-[10px] text-[#949ba4] hover:text-[#f23f43]">delete</button>`:''}`}${replyLine(m)}${m.file_url&&m.file_url.startsWith(FILEBASE)?`<a href="${esc(m.file_url)}" target="_blank" class="mt-1 flex items-center gap-2 bg-[#2b2d31] border border-[#3f4147] rounded-lg px-3 py-2 w-fit text-xs text-[#5865f2] hover:underline">📄 ${esc(m.file_name||'file')}</a>`:''}${m.image_url&&m.image_url.startsWith(IMGBASE)?`<img src="${esc(m.image_url)}" loading="lazy" onclick="lightbox(this.src)" class="mt-1 max-h-64 max-w-xs rounded-lg cursor-pointer">`:''}<p class="text-sm" data-t>${fmt(m)}${m.edited_at?' <span class="text-[10px] text-[#949ba4]">(edited)</span>':''}</p><div id="rx_${m.id}" class="flex flex-wrap gap-1 mt-1"></div><div id="lp_${m.id}"></div>${m.channel_id?`<button id="thr_${m.id}" onclick="openThread('${m.id}')" class="hidden mt-1 text-xs text-[#00a8fc] hover:underline"></button>`:''}</div></div>`;
@@ -910,9 +912,9 @@ function msgMenu(id,x,y){const m=msgCache[id];if(!m)return;const ch=!!m.channel_
   h+=sep+mi('◉','View profile',`showProfile('${m.sender_id}')`);
   if(ch&&!self)h+=mi('@','Mention',`mentionUser('${m.sender_id}')`);
   if(!self)h+=mi('⊘','Block user',`blockUser('${m.sender_id}')`);
-  if((ch&&!self)||self||mod)h+=sep;
+  if((ch&&!self)||self||mod||canDeleteMsg(m))h+=sep;
   if(ch&&!self)h+=mi('⚑','Report message',`reportMsg('${id}')`,1);
-  if(self||mod)h+=mi('🗑','Delete message',`delMsg('${id}')`,1);
+  if(self||canDeleteMsg(m))h+=mi('🗑','Delete message',`delMsg('${id}')`,1);
   h+=sep+mi('ID','Copy message ID',`navigator.clipboard.writeText('${id}')`);showCtx(x,y,h)}
 function moreRx(id,x,y){showCtx(x,y,`<div class="grid grid-cols-4 gap-1 p-1">${EMOJIS.map(e=>emo(id,e)).join('')}</div>`)}
 function chanMenu(id,x,y){let h='';if(isStaff()||myPerm('manage_channels'))h+=mi('⬆','Move up',`moveChannel('${id}',-1)`)+mi('⬇','Move down',`moveChannel('${id}',1)`)+sep+mi('✎','Edit channel',`editChannel('${id}')`)+mi('🗑','Delete channel',`deleteChannel('${id}')`,1)+sep;showCtx(x,y,h+chanExtraMenu(id)+mi('ID','Copy channel ID',`navigator.clipboard.writeText('${id}')`))}
@@ -1856,7 +1858,7 @@ async function togglePins(){
   if(error)return alert(error.message);
   const canMod=myPerm('manage_messages');
   const item=m=>{const p=profiles[m.sender_id]||{username:'?'};
-    return `<div class="rounded-xl bg-black/20 p-3 text-sm"><div class="flex items-center gap-2"><b style="${nameCss(p)}">${esc(dn(p))}</b><span class="text-[10px] text-[#949ba4]">${new Date(m.created_at).toLocaleString()}</span></div><p class="mt-1 break-words whitespace-pre-wrap">${esc(plainText(m.content))}</p>${canMod?`<div class="mt-2 flex gap-2"><button onclick="pinAction('${m.id}','unpin')" class="pbtn">Unpin</button><button onclick="pinAction('${m.id}','delete')" class="pbtn danger">Delete message</button></div>`:''}</div>`};
+    return `<div class="rounded-xl bg-black/20 p-3 text-sm"><div class="flex items-center gap-2"><b style="${nameCss(p)}">${esc(dn(p))}</b><span class="text-[10px] text-[#949ba4]">${new Date(m.created_at).toLocaleString()}</span></div><p class="mt-1 break-words whitespace-pre-wrap">${esc(plainText(m.content))}</p>${canMod?`<div class="mt-2 flex gap-2"><button onclick="pinAction('${m.id}','unpin')" class="pbtn">Unpin</button>${canDeleteMsg(m)?'<button onclick="pinAction(\''+m.id+'\',\'delete\')" class="pbtn danger">Delete message</button>':''}</div>`:''}</div>`};
   $('vpc').innerHTML=`<div class="flex items-center justify-between mb-3"><h3 class="font-bold text-white">📌 Pinned messages</h3><button onclick="closeVp()" class="text-[#949ba4] hover:text-white">✕</button></div><div class="text-left space-y-3 max-h-[60vh] overflow-y-auto">${data.length?data.map(item).join(''):'<p class="text-xs text-[#949ba4]">No pinned messages yet.</p>'}</div>`;
   $('vp').classList.remove('hidden');
 }
