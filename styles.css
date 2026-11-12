@@ -528,3 +528,13 @@ html body #ch button.hidden{display:none}
 .dec-rainbow::after{background:conic-gradient(#ff3b3b,#ffb02e,#f4ff3b,#3bff6f,#3bd5ff,#6b3bff,#ff3bd5,#ff3b3b)}
 @keyframes decrot{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.dec,.dec::after{animation:none !important}}
+
+/* icon + label buttons under your name in the sidebar */
+.meb-row{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.meb{min-width:0;padding:6px 0 5px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:8px;background:rgba(255,255,255,.05);color:#b5bac1;border:1px solid transparent;transition:background .15s,color .15s,transform .1s,border-color .15s}
+.meb-i{font-size:15px;line-height:1}
+.meb-t{font-size:9.5px;font-weight:500;line-height:1.1;white-space:nowrap}
+.meb.red{grid-column:span 2}
+.meb:hover{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.12)}
+.meb:active{transform:scale(.95)}
+.meb.red:hover{background:rgba(242,63,67,.2);color:#f23f43;border-color:rgba(242,63,67,.35)}
