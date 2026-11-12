@@ -13,7 +13,7 @@ function shPages(){
   const roleOk=defRole==='owner'||myPerm('manage_roles');
   return [
     {g:(servers.find(x=>x.id===srvId)||{}).name||'Server',items:[{k:'overview',ic:'⚙',t:'Overview',ok:true}]},
-    {g:'People',items:[{k:'roles',ic:'🛡',t:'Roles',ok:roleOk},{k:'tags',ic:'🏷',t:'Tags',ok:def&&(defRole==='owner'||defPerm('manage_shop'))},{k:'inbox',ic:'📥',t:'Staff inbox',ok:def&&(defRole==='owner'||defPerm('manage_server'))},{k:'decor',ic:'✨',t:'Decorations',ok:def&&(defRole==='owner'||defPerm('manage_shop'))},{k:'audit',ic:'📋',t:'Audit Log',ok:staff||myPerm('view_audit_log')}]},
+    {g:'People',items:[{k:'roles',ic:'🛡',t:'Roles',ok:roleOk},{k:'tags',ic:'🏷',t:'Tags',ok:def&&(defRole==='owner'||defPerm('manage_shop'))},{k:'inbox',ic:'📥',t:'Staff inbox',ok:def&&(defRole==='owner'||defPerm('manage_server'))},{k:'badges',ic:'🎖',t:'Badges',ok:def&&(defRole==='owner'||defPerm('manage_shop'))},{k:'decor',ic:'✨',t:'Decorations',ok:def&&(defRole==='owner'||defPerm('manage_shop'))},{k:'audit',ic:'📋',t:'Audit Log',ok:staff||myPerm('view_audit_log')}]},
     {g:'Channels',items:[{k:'channels',ic:'#',t:'Channels',ok:staff||myPerm('manage_channels')}]},
     {g:'Moderation',items:[{k:'rules',ic:'📜',t:'Welcome & Rules',ok:staff},{k:'automod',ic:'🤖',t:'Auto-mod',ok:staff&&def},{k:'words',ic:'🚫',t:'Blocked Words',ok:staff&&def}]},
     {g:'Integrations',items:[{k:'hooks',ic:'🔗',t:'Webhooks',ok:staff}]},
@@ -42,7 +42,7 @@ function shDraw(){
   const cur=all.find(i=>i.k===shPage);
   $('sx_t').textContent=cur.t;
   const b=$('sx_b');b.className='';b.onclick=null;delete b.dataset.editing;
-  ({overview:shOverview,roles:shRoles,tags:shTags,audit:shAudit,channels:shChannels,rules:tvRules,automod:tvAutomod,words:tvWords,hooks:tvHooks,commands:shCommands,lists:shLists,feedback:shFeedback,decor:shDecor,inbox:shInbox})[shPage](b);
+  ({overview:shOverview,roles:shRoles,tags:shTags,audit:shAudit,channels:shChannels,rules:tvRules,automod:tvAutomod,words:tvWords,hooks:tvHooks,commands:shCommands,lists:shLists,feedback:shFeedback,decor:shDecor,inbox:shInbox,badges:shBadges})[shPage](b);
   const m=$('sx').querySelector('.sx-main');if(m)m.scrollTop=0;
 }
 
@@ -262,7 +262,7 @@ async function shFeedback(b){
    <div class="sx-bar" style="margin-bottom:12px">${sel('fb_fk',fbFilter.kind,[['','All types'],...Object.entries(FB_KIND).map(([k,v])=>[k,v[0]+' '+v[1]])])}${sel('fb_fs',fbFilter.status,[['','Any status'],...Object.entries(FB_STATUS).map(([k,v])=>[k,v[0]+' '+v[1]])])}<span class="sx-sub" style="margin-left:auto">${rows.length} shown</span></div>`+
    (rows.length?rows.map(r=>{const p=profiles[r.user_id];return `<div class="sx-row" style="align-items:flex-start"><div class="sx-grow"><div class="sx-nm">${FB_KIND[r.kind][0]} ${esc(FB_KIND[r.kind][1])} <span class="sx-sub">from ${p?esc(dn(p)):'someone'} · ${new Date(r.created_at).toLocaleString()}</span></div>
      <div style="white-space:pre-wrap;margin:6px 0 8px;word-break:break-word">${esc(r.body)}</div>
-     <div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries(FB_STATUS).map(([k,v])=>`<button class="sx-btn" ${k===r.status?'style="outline:2px solid #ff6b8a"':''} onclick="shFbSet('${r.id}','${k}')">${v[0]} ${v[1]}</button>`).join('')}${shBtn('Delete',`shFbDel('${r.id}')`,'red')}</div></div></div>`}).join(''):shEmpty('Nothing here yet.'));
+     <div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries(FB_STATUS).map(([k,v])=>`<button class="sx-btn" ${k===r.status?'style="outline:2px solid #ff6b8a"':''} onclick="shFbSet('${r.id}','${k}')">${v[0]} ${v[1]}</button>`).join('')}${(r.kind==='bug'||r.kind==='suggestion')&&(defRole==='owner'||defPerm('manage_shop'))?shBtn(r.kind==='bug'?'🐞 Give Bug hunter':'💡 Give Idea star',`shFbBadge('${r.user_id}','${r.kind==='bug'?'bughunter':'ideastar'}')`):''}${shBtn('Delete',`shFbDel('${r.id}')`,'red')}</div></div></div>`}).join(''):shEmpty('Nothing here yet.'));
   $('fb_fk').onchange=e=>{fbFilter.kind=e.target.value;shFeedback(b)};$('fb_fs').onchange=e=>{fbFilter.status=e.target.value;shFeedback(b)};
 }
 async function shFbSet(id,status){const {error}=await sb.from('feedback').update({status}).eq('id',id);if(error)return toast(error.message,true);shFeedback($('sx_b'))}
@@ -329,3 +329,41 @@ async function shInboxSave(){
   const f={server_id:String(srvId),inbox_channel:$('ib_ch').value||null,inbox_reports:$('ib_r').checked,inbox_feedback:$('ib_f').checked,thank_channel:$('ib_th').value||null};
   const {error}=await sb.from('server_settings').upsert(f,{onConflict:'server_id'});const m=$('ib_m');
   m.style.color=error?'#f23f43':'#23a55a';m.textContent=error?(/inbox_|thank_channel/.test(error.message)?'Run staff_inbox.sql and kofi.sql in Supabase first.':error.message):'Saved.'}
+
+
+// ---------- Badges: hand-given badges (Bug hunter, Event winner...) ----------
+let bgEditing=null;
+async function shFbBadge(uid,bid){const {error}=await sb.rpc('give_badge_id',{uid,bid});toast(error?(/give_badge_id/.test(error.message)?'Run more_badges.sql in Supabase first.':error.message):'Badge given',!!error)}
+async function shBadges(b){
+  await loadBadgeDefs(true);
+  const list=Object.values(badgeDefs),d=bgEditing?badgeDefs[bgEditing]:null;
+  if(!list.length&&!d&&!window._bgChecked){window._bgChecked=1;const {error}=await sb.from('badge_defs').select('id').limit(1);if(error){b.innerHTML=shEmpty('Badges are not set up yet.<br>Run <b>setup/more_badges.sql</b> in Supabase first.');return}}
+  b.innerHTML=`<div class="sx-sub" style="margin-bottom:10px">Badges you give by hand. The automatic ones (messages, streaks, account age...) need nothing from you.</div>
+   <div class="sx-sec">Give or remove a badge</div>
+   <input id="bg_u" class="sx-in" placeholder="Username" autocomplete="off">
+   <select id="bg_s" class="sx-in">${list.map(x=>`<option value="${x.id}">${esc(x.emoji)} ${esc(x.name)}</option>`).join('')}</select>
+   <div class="sx-bar" style="margin-bottom:6px">${shBtn('Give badge','shBgGive(true)','blue')}${shBtn('Remove badge','shBgGive(false)','red')}</div>
+   <div id="bg_m" class="sx-sub" style="min-height:16px"></div>
+   <div class="sx-sec">${d?'Edit badge':'New badge'}</div>
+   ${d?'':'<input id="bg_id" class="sx-in" maxlength="16" placeholder="short id, lowercase letters and numbers" autocomplete="off">'}
+   <input id="bg_e" class="sx-in" maxlength="4" placeholder="Emoji, e.g. 🐞" autocomplete="off">
+   <input id="bg_n" class="sx-in" maxlength="24" placeholder="Name" autocomplete="off">
+   <input id="bg_d" class="sx-in" maxlength="80" placeholder="What it is for (shown when you hover it)" autocomplete="off">
+   <div class="sx-bar" style="margin-bottom:14px">${shBtn(d?'Save changes':'Create badge','shBgSave()','blue')}${d?shBtn('Cancel','bgEditing=null;shBadges($("sx_b"))'):''}</div>
+   <div class="sx-sec">Badges (${list.length})</div>`+
+   (list.map(x=>`<div class="sx-row"><div class="sx-grow"><div class="sx-nm">${esc(x.emoji)} ${esc(x.name)}</div><div class="sx-sub">${esc(x.descr||'')}</div></div>${shBtn('Edit',`bgEditing='${x.id}';shBadges($('sx_b'))`)}${shBtn('Delete',`shBgDel('${x.id}')`,'red')}</div>`).join('')||shEmpty('No badges yet.'));
+  $('bg_e').value=d?d.emoji:'';$('bg_n').value=d?d.name:'';$('bg_d').value=d?(d.descr||''):'';
+}
+async function shBgSave(){
+  const m=$('bg_m'),id=bgEditing||($('bg_id')||{value:''}).value.trim().toLowerCase(),e=$('bg_e').value.trim(),n=$('bg_n').value.trim();
+  const say=t=>{m.style.color='#f23f43';m.textContent=t};
+  if(!/^[a-z0-9]{1,16}$/.test(id))return say('The id needs lowercase letters and numbers only.');if(!e||!n)return say('Add an emoji and a name.');
+  const {error}=await sb.rpc('upsert_badge_def',{bid:id,bemoji:e,bname:n,bdescr:$('bg_d').value.trim()});
+  if(error)return say(error.message);bgEditing=null;badgeDefs={};shBadges($('sx_b'));
+}
+async function shBgDel(id){if(!(await askConfirm('Delete this badge? Everyone who has it loses it.')))return;const {error}=await sb.rpc('delete_badge_def',{bid:id});if(error)return toast(error.message,true);badgeDefs={};shBadges($('sx_b'))}
+async function shBgGive(give){
+  const m=$('bg_m'),u=$('bg_u').value.trim(),bid=$('bg_s').value;if(!u||!bid){m.style.color='#f23f43';m.textContent='Type a username and pick a badge.';return}
+  const {error}=await sb.rpc(give?'give_badge':'remove_badge',{uname:u,bid});
+  m.style.color=error?'#f23f43':'#23a55a';m.textContent=error?error.message:(give?'Given to ':'Removed from ')+u+'.';
+}

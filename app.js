@@ -34,7 +34,7 @@ window.alert=m=>toast(String(m),true);
 // ===== image lightbox =====
 function lightbox(src){
   const d=document.createElement('div');d.className='fixed inset-0 bg-black/85 z-[70] flex items-center justify-center p-4 cursor-zoom-out';
-  d.innerHTML=`<img src="${esc(src)}" class="max-w-full max-h-full rounded-lg object-contain"><a href="${esc(src)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="absolute top-4 right-4 text-xs text-white/80 hover:text-white bg-black/50 rounded px-2 py-1">Open original</a>`;
+  d.innerHTML=`<img src="${esc(src)}" decoding="async" class="max-w-full max-h-full rounded-lg object-contain"><a href="${esc(src)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="absolute top-4 right-4 text-xs text-white/80 hover:text-white bg-black/50 rounded px-2 py-1">Open original</a>`;
   const k=e=>{if(e.key==='Escape')x()},x=()=>{d.remove();document.removeEventListener('keydown',k)};
   d.onclick=x;document.addEventListener('keydown',k);document.body.appendChild(d);
 }
@@ -42,7 +42,7 @@ function lightbox(src){
 // ===== avatars / server icons live in Storage; the database only holds the URL =====
 async function uploadImg(blob,prefix){
   const path=me.id+'/'+prefix+'-'+crypto.randomUUID()+'.jpg';
-  const up=await sb.storage.from('chat-images').upload(path,blob,{contentType:'image/jpeg'});
+  const up=await sb.storage.from('chat-images').upload(path,blob,{contentType:'image/jpeg',cacheControl:'31536000'});
   if(up.error)throw up.error;
   return sb.storage.from('chat-images').getPublicUrl(path).data.publicUrl;
 }
@@ -134,8 +134,6 @@ const isStaff=()=>['manage_server','manage_roles','manage_channels','kick_member
 const canBan=u=>myPerm('ban_members')&&myRank()>rankOf(u);
 const canMute=u=>myPerm('timeout_members')&&myRank()>rankOf(u);
 const canManage=u=>myPerm('kick_members')&&myRank()>rankOf(u);
-// who may delete a message: its sender, or someone with Manage Messages who OUTRANKS the sender (owner outranks everyone). Equal rank is not enough. BeanBot's own messages can be removed by anyone with Manage Messages.
-const canDeleteMsg=m=>{if(!m)return false;if(m.sender_id===me.id)return true;if(!m.channel_id||!myPerm('manage_messages'))return false;return isBot(profiles[m.sender_id])||myRank()>rankOf(m.sender_id)};
 // channel limits are roles too: "who can read / type" = this role and everyone above it
 const roleNeed=(rid,legacy)=>{if(rid){const r=croles.find(x=>x.id===rid);if(r)return Math.max(1,r.position||0)}return (legacy||1)>=7?OWNER_RANK:0};
 const canReadChan=c=>!!c&&myRank()>=roleNeed(c.min_read_role,c.min_read_rank);
@@ -183,15 +181,18 @@ async function loadProfiles(maxAge){if(maxAge&&Date.now()-_profAt<maxAge)return;
 async function kickOut(b){await sb.auth.signOut();$('app').classList.add('hidden');$('auth').classList.remove('hidden');$('err').textContent='This account is banned until '+b.toLocaleString()}
 function until(p,k){const v=p&&p[k];return v&&new Date(v)>new Date()?new Date(v):null}
 async function start(){
-  const {data:{user}}=await sb.auth.getUser();
-  if(!user){$('auth').classList.remove('hidden');$('app').classList.add('hidden');return}
+  const {data:{session}}=await sb.auth.getSession();const user=session&&session.user;
+  if(!user){$('auth').classList.remove('hidden');$('app').classList.add('hidden');getDeviceIds();fetch('https://ilmzklhvkacnljfgnxvq.supabase.co/functions/v1/auth-gate',{method:'OPTIONS'}).catch(()=>{});return}   // warm up the login function while they type
   $('auth').classList.add('hidden');$('app').classList.remove('hidden');
-  await loadProfiles();me=profiles[user.id];{const b=until(me,'banned_until');if(b)return kickOut(b)}
-  try{const dv=await getDeviceIds();await sb.rpc('bc_register_device',{hw:dv.h,dev:dv.d})}catch(e){}
-  try{const dv=await getDeviceIds();const {data:devBanned,error:devErr}=await sb.rpc('register_device',{h:dv.h,d:dv.d});if(!devErr&&devBanned===true)return kickDevice()}catch(e){}
+  await loadProfiles();me=profiles[user.id];if(!me){await sb.auth.signOut();$('app').classList.add('hidden');$('auth').classList.remove('hidden');return}{const b=until(me,'banned_until');if(b)return kickOut(b)}
+  // the device ban check runs while everything else loads; it is still checked before the app opens
+  const devBan=(async()=>{try{const dv=await getDeviceIds();sb.rpc('bc_register_device',{hw:dv.h,dev:dv.d}).then(()=>{},()=>{});const {data,error}=await sb.rpc('register_device',{h:dv.h,d:dv.d});return !error&&data===true}catch(e){return false}})();
   pushRebind();
-  await loadFriends();await loadBlocks();await loadDmPrefs();await loadSupporters();await loadShopTags();await loadShopDecor();await loadSiteLists();await loadChanMap();drawMeBox();
-  await loadGroups();await loadUnread();await loadServers();await redeemInvite();loadCustomEmoji();const d=servers.find(x=>x.is_default);if(_inviteOpen)openServer(_inviteOpen);else if(d)openServer(d.id);else showDMs();listen();track();loadTurn();initExtras();
+  const safe=f=>Promise.resolve().then(f).catch(e=>console.error(e));
+  await Promise.all([safe(loadFriends),safe(loadBlocks),safe(loadDmPrefs),safe(loadSupporters),safe(loadShopTags),safe(loadShopDecor),safe(loadSiteLists),safe(loadGroups),safe(loadServers),safe(async()=>{await loadChanMap();await loadUnread()})]);
+  drawMeBox();
+  if(await devBan)return kickDevice();
+  await redeemInvite();loadCustomEmoji();const d=servers.find(x=>x.is_default);if(_inviteOpen)openServer(_inviteOpen);else if(d)openServer(d.id);else showDMs();listen();track();loadTurn();initExtras();
 }
 async function loadServers(){const {data}=await sb.from('servers').select('*').order('created_at');servers=data||[];drawServerNav()}
 async function newServer(){
@@ -202,11 +203,11 @@ async function newServer(){
   await loadServers();openServer(servers[servers.length-1].id);
 }
 async function openServer(id){
-  srvId=id;delete unreadSrv[id];delete mentSrv[id];await loadProfiles(600000);await loadServers();
+  srvId=id;delete unreadSrv[id];delete mentSrv[id];await loadProfiles(600000);if(!servers.some(x=>x.id===id))await loadServers();
   const s=servers.find(x=>x.id===id);
-  const [c,m]=await Promise.all([sb.from('channels').select('*').eq('server_id',id).order('position',{nullsFirst:false}).order('created_at'),sb.from('server_members').select('*').eq('server_id',id)]);
+  const [c,m,cdq]=await Promise.all([sb.from('channels').select('*').eq('server_id',id).order('position',{nullsFirst:false}).order('created_at'),sb.from('server_members').select('*').eq('server_id',id),sb.from('custom_roles').select('*').eq('server_id',id)]);
   channels=c.data||[];channels.forEach(x=>chanSrv[x.id]=id);members=m.data||[];if(members.some(x=>!profiles[x.user_id]))await loadProfiles();roles={};members.forEach(x=>roles[x.user_id]=x.role);if((servers.find(x=>x.id===id)||{}).is_default){defRole=roles[me.id];const nb=$('newsrvbtn');if(nb)nb.classList.toggle('hidden',defRole!=='owner')}
-  if(!_migrated&&(servers.find(x=>x.id===id)||{}).is_default){_migrated=true;migrateImages()}{const {data:cd}=await sb.from('custom_roles').select('*').eq('server_id',id);croles=cd||[];cr={};members.forEach(x=>{if(x.custom_role)cr[x.user_id]=croles.find(y=>y.id===x.custom_role)})}
+  if(!_migrated&&(servers.find(x=>x.id===id)||{}).is_default){_migrated=true;migrateImages()}{const cd=cdq.data;croles=cd||[];cr={};members.forEach(x=>{if(x.custom_role)cr[x.user_id]=croles.find(y=>y.id===x.custom_role)})}
   if((servers.find(x=>x.id===id)||{}).is_default){defCr=cr[me.id]||null;defRk=rankOf(me.id)}
   bans=[];if(isStaff()){const {data:b}=await sb.from('server_bans').select('*').eq('server_id',id);bans=b||[]}
   $('sh').innerHTML=`<span class="truncate">${esc(s.name)}</span><span class="flex items-center gap-2 flex-shrink-0"><button onclick="openWeb()" title="Beanchat — search the web" class="text-base text-[#949ba4] hover:text-white">🫘</button>${canSettings()?'<button onclick="openServerSettings()" title="Server Settings" class="text-base text-[#949ba4] hover:text-white">⚙</button>':''}</span>`;
@@ -252,7 +253,7 @@ function toggleRoleGroup(k){
   drawMembers();
 }
 async function kick(uid){if(!(await askConfirm('Kick this member?')))return;const {error}=await sb.from('server_members').delete().eq('server_id',srvId).eq('user_id',uid);if(error)alert(error.message);openServer(srvId)}
-async function delMsg(id){const m0=msgCache[id];if(m0&&!canDeleteMsg(m0))return alert('You can only delete messages from people ranked below you.');const {error}=await sb.from(tblOf(msgCache[id])).delete().eq('id',id);if(error)return alert(error.message);const e=$('m_'+id);if(e)e.remove()}
+async function delMsg(id){const {error}=await sb.from(tblOf(msgCache[id])).delete().eq('id',id);if(error)return alert(error.message);const e=$('m_'+id);if(e)e.remove()}
 function drawChannels(){
   const groups=[],seen={};
   channels.forEach(c=>{const k=c.category||'';if(!(k in seen)){seen[k]=[];groups.push(k)}seen[k].push(c)});
@@ -376,7 +377,7 @@ function row(m,pm){
   const p=profiles[m.sender_id]||{username:'unknown'};
   const r=cur.type==='ch'?roles[m.sender_id]:null;
   const t=new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  const del=cur.type==='ch'?canDeleteMsg(m):m.sender_id===me.id;
+  const del=m.sender_id===me.id||(cur.type==='ch'&&myPerm('manage_messages'));
   const compact=!!pm&&pm.sender_id===m.sender_id&&!m.reply_to&&!isBot(p)&&dayKey(pm.created_at)===dayKey(m.created_at)&&(new Date(m.created_at)-new Date(pm.created_at))<300000;
   const t2=new Date(m.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
   return `<div id="m_${m.id}" class="group flex gap-3 ${compact?'!mt-0.5 ':''}${mentionsMe(m)?'bg-yellow-500/10 border-l-2 border-yellow-500 pl-2':''}">${compact?`<span class="w-9 flex-shrink-0 text-[9px] leading-5 text-center text-[#949ba4] opacity-0 group-hover:opacity-100 select-none whitespace-nowrap">${t2}</span>`:`<span onclick="showProfile('${m.sender_id}')" class="cursor-pointer flex-shrink-0">${av(p,9)}</span>`}<div class="min-w-0">${compact?`${m.pinned?'📌 ':''}${del?`<button onclick="delMsg('${m.id}')" class="hidden group-hover:inline float-right text-[10px] text-[#949ba4] hover:text-[#f23f43]">delete</button>`:''}`:`<span onclick="showProfile('${m.sender_id}')" class="font-bold text-sm cursor-pointer hover:underline" style="${nameCss(p)}">${esc(dn(p))}</span>${isBot(p)?' '+BOTBADGE:''}${utag(p)}${r&&r!=='member'?` ${tag(p,r)}`:''} <span class="text-[10px] text-[#949ba4]">${t}</span>${m.pinned?' 📌':''}${del?` <button onclick="delMsg('${m.id}')" class="hidden group-hover:inline text-[10px] text-[#949ba4] hover:text-[#f23f43]">delete</button>`:''}`}${replyLine(m)}${m.file_url&&m.file_url.startsWith(FILEBASE)?`<a href="${esc(m.file_url)}" target="_blank" class="mt-1 flex items-center gap-2 bg-[#2b2d31] border border-[#3f4147] rounded-lg px-3 py-2 w-fit text-xs text-[#5865f2] hover:underline">📄 ${esc(m.file_name||'file')}</a>`:''}${m.image_url&&m.image_url.startsWith(IMGBASE)?`<img src="${esc(m.image_url)}" loading="lazy" onclick="lightbox(this.src)" class="mt-1 max-h-64 max-w-xs rounded-lg cursor-pointer">`:''}<p class="text-sm" data-t>${fmt(m)}${m.edited_at?' <span class="text-[10px] text-[#949ba4]">(edited)</span>':''}</p><div id="rx_${m.id}" class="flex flex-wrap gap-1 mt-1"></div><div id="lp_${m.id}"></div>${m.channel_id?`<button id="thr_${m.id}" onclick="openThread('${m.id}')" class="hidden mt-1 text-xs text-[#00a8fc] hover:underline"></button>`:''}</div></div>`;
@@ -528,7 +529,7 @@ async function loadShopDecor(){try{const [a,b]=await Promise.all([sb.from('shop_
 const decWrap=(p,html)=>{const d=p&&p.equipped_decor&&shopDecor[p.equipped_decor];return d?`<span class="dec dec-${esc(d.kind)}" style="--d1:${esc(d.c1)};--d2:${esc(d.c2)}">${html}</span>`:html};
 function av(p,n){return decWrap(p,av0(p,n))}
 function av0(p,n){p=p||{username:'?'};const z=n===20?'w-20 h-20':n===16?'w-16 h-16':n===6?'w-6 h-6':n===9?'w-9 h-9':'w-8 h-8';
-  if(okImg(p.avatar))return `<img src="${esc(p.avatar)}" loading="lazy" class="${z} rounded-full object-cover flex-shrink-0">`;
+  if(okImg(p.avatar))return `<img src="${esc(p.avatar)}" loading="lazy" decoding="async" class="${z} rounded-full object-cover flex-shrink-0">`;
   return `<span class="${z} rounded-full bg-[#2b2d31] flex items-center justify-center overflow-hidden flex-shrink-0">${bean(p.username)}</span>`}
 function pickAvatar(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.onload=()=>{const c=document.createElement('canvas');c.width=c.height=96;const x=c.getContext('2d');const q=Math.min(i.width,i.height);x.drawImage(i,(i.width-q)/2,(i.height-q)/2,q,q,0,0,96,96);c.toBlob(b=>b?res(b):rej(),'image/jpeg',0.85)};i.onerror=rej;i.src=r.result};r.onerror=rej;r.readAsDataURL(f)})}
   let newBannerBlob=null,newBannerUrl='',bannerCleared=false;
@@ -566,7 +567,7 @@ function pickAvatar(f){return new Promise((res,rej)=>{const r=new FileReader();r
     if(newAvatarBlob){try{u.avatar=await uploadImg(newAvatarBlob,'avatar')}catch(e){return alert('Avatar upload failed: '+e.message)}}
     if(newBannerBlob){
       const path=me.id+'/banner-'+crypto.randomUUID()+'.jpg';
-      const up=await sb.storage.from('chat-images').upload(path,newBannerBlob,{contentType:'image/jpeg'});
+      const up=await sb.storage.from('chat-images').upload(path,newBannerBlob,{contentType:'image/jpeg',cacheControl:'31536000'});
       if(up.error)return alert('Banner upload failed: '+up.error.message);
       u.banner_image=sb.storage.from('chat-images').getPublicUrl(path).data.publicUrl;
     }else if(bannerCleared)u.banner_image=null;
@@ -596,8 +597,9 @@ async function addByName(){const n=$('fadd').value.trim().toLowerCase().replace(
   if(error)return say(error.message);await loadFriends();drawPeople();$('fmsg').textContent='Request sent to '+u.username}
 async function runCmd(line){
   const [c,name,arg]=line.slice(1).trim().split(/\s+/);const cmd=(c||'').toLowerCase();
-  if(cmd==='help')return sys('BeanBot: /balance · /coinflip 100 heads · /slots 100 · /roulette 100 red · /dice 100 4 · /blackjack 100 (then /hit, /stand or /double) · /luck (beans are play money) · /welcome · /goodbye (admins: join and leave messages) · /poll question | option 1 | option 2 · /polls · /endpoll number · /usercount · /serverinfo · /userinfo user · /topbeans · /roll 2d6 · /flip · /8ball question · /choose a | b | c · /rate thing · /hug user · /quote user [words] · /beanfact · /ping · /cmds · admins: /addcmd name text · /delcmd name · /botset disable|enable command · mods: /warn user reason · /warnings user · /purge 20 · /mutes · admins: /clearwarns user · /slowmode 10 · /announce text · anyone: /seen user · /stats · owner: /automod (automatic mutes for banned words, spam and warnings). Other commands: /bold text (admins and up: big bold message) · /ban user hours · /unban user · /mute user minutes · /unmute user · /kick user · /nick user newname · /newrole name #color member|verified|mod|admin · /giverole user rolename|none · /delrole name · /deleteuser user · /gift user amount · /switch user · /banword word · /unbanword word · /banwords · /auditlog. Built-in roles are managed only from the gear icon. Deleting a server is only in its right-click menu. /hwidban user bans the devices they have used (works through VPNs) · /unhwidban user · /banip user bans the network address on their account, and is not foolproof since addresses change · /ips user · /alts user · /iplog');
+  if(cmd==='help')return sys('BeanBot: /balance · /coinflip 100 heads · /slots 100 · /roulette 100 red · /dice 100 4 · /blackjack 100 (then /hit, /stand or /double) · /luck (beans are play money) · /welcome · /goodbye (admins: join and leave messages) · /poll question | option 1 | option 2 · /polls · /endpoll number · /usercount · /serverinfo · /userinfo user · /topbeans · /roll 2d6 · /flip · /8ball question · /choose a | b | c · /rate thing · /hug user · /beanfact · /ping · /cmds · admins: /addcmd name text · /delcmd name · /botset disable|enable command · mods: /warn user reason · /warnings user · /purge 20 · /mutes · admins: /clearwarns user · /slowmode 10 · /announce text · anyone: /seen user · /stats · owner: /automod (automatic mutes for banned words, spam and warnings). Other commands: /bold text (admins and up: big bold message) · /ban user hours · /unban user · /mute user minutes · /unmute user · /kick user · /nick user newname · /newrole name #color member|verified|mod|admin · /giverole user rolename|none · /delrole name · /deleteuser user · /gift user amount · /switch user · /banword word · /unbanword word · /banwords · /auditlog. Built-in roles are managed only from the gear icon. Deleting a server is only in its right-click menu. /hwidban user bans the devices they have used (works through VPNs) · /unhwidban user · /banip user bans the network address on their account, and is not foolproof since addresses change · /ips user · /alts user · /iplog');
   {const need=cmdNeed(cmd);if(need&&cmd!=='warnings'&&cmd!=='endpoll'&&!canCmd(need))return sys(need==='owner'?'Only the owner can use /'+cmd+'.':'You need the '+permLabel(need)+' permission to use /'+cmd+'.')}
+  {const nd=cmdNeed(cmd);if(nd&&!AUDIT_SKIP.has(cmd))sb.rpc('bc_log_cmd',{cmd,args:line.slice(1).trim().replace(/^\S+\s*/,'').slice(0,300)}).then(()=>{},()=>{})}
   if(!STAFF_CMDS.has(cmd))return botCall(cmd,line);
   if(cmd==='bold'){
     if(cur.type!=='ch')return sys('/bold only works in server channels.');
@@ -629,16 +631,6 @@ async function runCmd(line){
     if(du){u=du;profiles[du.id]=du}
   }
   if(!u)return sys('No user named "'+(name||'')+'". Usage: /'+cmd+' username');
-  if(cmd==='quote'){
-    if(!cur.type)return sys('Open a channel or chat first.');
-    if(cur.type==='ch'&&!canPostHere())return sys('You do not have permission to type in this channel.');
-    {const mu=until(me,'muted_until');if(mu)return alert('You are muted until '+mu.toLocaleString())}
-    const words=P.slice(2).join(' ').toLowerCase();
-    const here=m=>cur.type==='ch'?m.channel_id===cur.id:cur.type==='group'?m.group_id===cur.id:(!m.channel_id&&!m.group_id&&((m.sender_id===cur.id&&m.recipient_id===me.id)||(m.sender_id===me.id&&m.recipient_id===cur.id)));
-    const found=Object.values(msgCache).filter(m=>m.sender_id===u.id&&here(m)&&m.content&&!/^(\/|\[\[)/.test(m.content)&&(!words||String(m.content).toLowerCase().includes(words))).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))[0];
-    if(!found)return sys('No recent message from '+u.username+(words?' containing "'+words+'"':'')+' here. Usage: /quote username [words to search for]');
-    return postQuote(found);
-  }
   if(['ban','unban','mute','unmute'].includes(cmd)){
     const kind=cmd.replace('un',''),undo=cmd.startsWith('un');let mins=0;
     if(!undo){const n=parseFloat(arg);if(!(n>0))return sys('Usage: /'+cmd+' username '+(kind==='ban'?'hours':'minutes'));mins=Math.round(n*(kind==='ban'?60:1))}
@@ -695,7 +687,6 @@ let CMD_INFO=[
 ["choose","a | b | c","Let BeanBot pick one","",false],
 ["rate","thing","BeanBot rates it out of 10","",false],
 ["hug","@user","Give someone a hug","",false],
-["quote","@user words","Quote what someone said (their latest message, or the latest one containing the words)","",false],
 ["beanfact","","A random bean fact","",false],
 ["ping","","Check that BeanBot is awake","",false],
 ["usercount","","How many members and accounts","",false],
@@ -762,7 +753,7 @@ const roleKey=r=>String(r.name||'').toLowerCase().replace(/[^a-z0-9_]/g,'');
 // bot accounts and the command table live in the database (Server Settings > Bots & Lists / Commands)
 async function loadSiteLists(){
   try{const {data}=await sb.from('bc_bots').select('username');if(data&&data.length)BOT_NAMES=data.map(x=>String(x.username).toLowerCase())}catch(e){}
-  try{const {data}=await sb.from('bc_commands').select('*').order('ord');if(data&&data.length){const nb=CMD_INFO.find(x=>x[0]==='bans');const nq=CMD_INFO.find(x=>x[0]==='quote');CMD_INFO=data.map(r=>[r.name,r.usage||'',r.info||'',r.perm||'',!!r.hidden]);if(nb&&!CMD_INFO.some(x=>x[0]==='bans'))CMD_INFO.push(nb);if(nq&&!CMD_INFO.some(x=>x[0]==='quote'))CMD_INFO.push(nq)}}catch(e){}
+  try{const {data}=await sb.from('bc_commands').select('*').order('ord');if(data&&data.length){const nb=CMD_INFO.find(x=>x[0]==='bans');CMD_INFO=data.map(r=>[r.name,r.usage||'',r.info||'',r.perm||'',!!r.hidden]);if(nb&&!CMD_INFO.some(x=>x[0]==='bans'))CMD_INFO.push(nb)}}catch(e){}
 }
 const BOLDMARK='[[big]]';
 function plainText(c){
@@ -770,7 +761,6 @@ function plainText(c){
   if(c.startsWith('[[embed]]')){try{const o=JSON.parse(c.slice(9));return [o.t,o.d].filter(Boolean).join(' ')}catch(e){return 'BeanBot'}}
   if(c.startsWith('[[poll:')){const l=c.split('\n');return '📊 '+(l[1]||'Poll')}
   if(c.startsWith(BOLDMARK))return c.slice(BOLDMARK.length).trim();
-  if(c.startsWith(QUOTEMARK)){try{const o=JSON.parse(c.slice(QUOTEMARK.length).split('\n')[0]);return '\u201c'+o.t+'\u201d \u2014 '+o.n}catch(e){}}
   return c;
 }
 // accounts that get BeanBot's look: BOT badge, embed cards, no edit button. Add your own bot accounts' usernames here.
@@ -794,7 +784,6 @@ function autoEmbed(c){
 }
 function fmt(m){
   const c=String(m.content||'');let h;{const g=gifHtml(c);if(g&&!isBot(profiles[m.sender_id]))return g}
-  if(c.startsWith(QUOTEMARK)&&!isBot(profiles[m.sender_id])){const q=quoteHtml(c);if(q)return q}
   if(c.startsWith('[[poll:')&&isBot(profiles[m.sender_id])){const ph=pollCardHtml(c);if(ph)return ph}
   if(isBot(profiles[m.sender_id])){
     if(c.startsWith('[[embed]]')){try{return embedBox(JSON.parse(c.slice(9)))}catch(e){}}
@@ -901,9 +890,8 @@ const mi=(ic,t,fn,red,keep,arrow)=>`<div onclick="${keep?'event.stopPropagation(
 const emo=(id,e)=>`<span onclick="toggleRx('${id}','${e}')" class="w-9 h-9 flex items-center justify-center text-xl rounded-full hover:bg-[#35373c] cursor-pointer">${e}</span>`;
 function msgMenu(id,x,y){const m=msgCache[id];if(!m)return;const ch=!!m.channel_id,self=m.sender_id===me.id,mod=ch&&myPerm('manage_messages');let h='';
   h+=`<div class="flex gap-2 px-1 pt-1 pb-2">${QUICK.map(e=>emo(id,e)).join('')}</div>`+mi('☺','Add reaction',`moreRx('${id}',${x},${y})`,0,1,1)+sep;
-  if(self&&!isBot(profiles[m.sender_id])&&!String(m.content).startsWith(QUOTEMARK))h+=mi('✎','Edit message',`editMsg('${id}')`);
+  if(self&&!isBot(profiles[m.sender_id]))h+=mi('✎','Edit message',`editMsg('${id}')`);
   h+=mi('↩','Reply',`startReply('${id}')`);
-  h+=mi('❝','Quote',`quoteMsg('${id}')`);
   h+=mi('➡','Forward',`forwardMsg('${id}')`);
   if(ch)h+=mi('🧵',replyCount[id]?'Open thread':'Start thread',`openThread('${id}')`);
   h+=sep+mi('⧉','Copy text',`navigator.clipboard.writeText(msgCache['${id}'].content)`);
@@ -912,38 +900,13 @@ function msgMenu(id,x,y){const m=msgCache[id];if(!m)return;const ch=!!m.channel_
   h+=sep+mi('◉','View profile',`showProfile('${m.sender_id}')`);
   if(ch&&!self)h+=mi('@','Mention',`mentionUser('${m.sender_id}')`);
   if(!self)h+=mi('⊘','Block user',`blockUser('${m.sender_id}')`);
-  if((ch&&!self)||self||mod||canDeleteMsg(m))h+=sep;
+  if((ch&&!self)||self||mod)h+=sep;
   if(ch&&!self)h+=mi('⚑','Report message',`reportMsg('${id}')`,1);
-  if(self||canDeleteMsg(m))h+=mi('🗑','Delete message',`delMsg('${id}')`,1);
+  if(self||mod)h+=mi('🗑','Delete message',`delMsg('${id}')`,1);
   h+=sep+mi('ID','Copy message ID',`navigator.clipboard.writeText('${id}')`);showCtx(x,y,h)}
 function moreRx(id,x,y){showCtx(x,y,`<div class="grid grid-cols-4 gap-1 p-1">${EMOJIS.map(e=>emo(id,e)).join('')}</div>`)}
 function chanMenu(id,x,y){let h='';if(isStaff()||myPerm('manage_channels'))h+=mi('⬆','Move up',`moveChannel('${id}',-1)`)+mi('⬇','Move down',`moveChannel('${id}',1)`)+sep+mi('✎','Edit channel',`editChannel('${id}')`)+mi('🗑','Delete channel',`deleteChannel('${id}')`,1)+sep;showCtx(x,y,h+chanExtraMenu(id)+mi('ID','Copy channel ID',`navigator.clipboard.writeText('${id}')`))}
 async function moveChannel(id,delta){const {error}=await sb.rpc('set_channel_position',{cid:id,delta});if(error)return alert(error.message);await openServer(srvId)}
-// ===== quote cards: /quote and the Quote menu item send one of these =====
-const QUOTEMARK='[[quote]]';
-function quoteCard(m){
-  const p=profiles[m.sender_id],ch=m.channel_id&&typeof channels!=='undefined'?channels.find(x=>x.id===m.channel_id):null;
-  const when=new Date(m.created_at).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
-  // the zero-width space after each @ stops quoted text from pinging anyone (or sneaking in @everyone)
-  const t=plainText(m.content).trim().slice(0,500).replace(/@/g,'@\u200b');
-  return QUOTEMARK+JSON.stringify({t,u:m.sender_id,n:dn(p),x:(ch?'#'+ch.name+' \u00b7 ':'')+when});
-}
-function quoteHtml(c){
-  let o;try{o=JSON.parse(c.slice(QUOTEMARK.length).split('\n')[0])}catch(e){return null}
-  if(!o||typeof o.t!=='string')return null;
-  const p=profiles[o.u],name=p?dn(p):(o.n||'unknown');
-  return `<div style="max-width:30rem;margin-top:4px;background:#111214;border:1px solid #2e2f34;border-radius:14px;padding:14px 18px;white-space:normal"><div style="text-align:right;margin-bottom:-6px"><span style="font:11px ui-monospace,Menlo,monospace;color:#80848e;border:1px solid #2e2f34;border-radius:5px;padding:1px 6px">/quote</span></div><div style="display:flex;gap:8px;align-items:flex-start"><span style="font:700 2.4rem/1 Georgia,serif;color:#6d6f78;flex-shrink:0;margin-top:2px">\u201c</span><div style="font-size:1.15rem;line-height:1.4;color:#ece9e2;white-space:pre-wrap;word-break:break-word;min-width:0;padding-top:4px">${esc(o.t)}<span style="font:700 2.4rem/0 Georgia,serif;color:#6d6f78;vertical-align:-0.45em;margin-left:4px">\u201d</span></div></div><div style="border-top:1px solid #2b2d31;margin-top:12px;padding-top:12px;display:flex;gap:12px;align-items:center">${p?av(p,9):''}<div style="min-width:0"><div style="font-weight:700;font-size:15px;color:#fff">${esc(name)}</div><div style="font-size:12.5px;color:#949ba4">${esc(o.x||'')}</div></div></div></div>`;
-}
-async function postQuote(m){
-  if(!cur.type)return sys('Open a channel or chat first.');
-  if(cur.type==='ch'&&!canPostHere())return sys('You do not have permission to type in this channel.');
-  {const mu=until(me,'muted_until');if(mu)return alert('You are muted until '+mu.toLocaleString())}
-  const body=quoteCard(m);
-  const row=cur.type==='ch'?{channel_id:cur.id,content:body,reply_to:m.id}:cur.type==='group'?{group_id:cur.id,content:body,reply_to:m.id}:{recipient_id:cur.id,content:body,reply_to:m.id};
-  const {error}=await sb.from(cur.type==='ch'?'messages':cur.type==='group'?'group_dm_messages':'dm_messages').insert(row);
-  if(error)sys('Could not send: '+error.message);
-}
-function quoteMsg(id){const m=msgCache[id];if(m)postQuote(m)}
 function startReply(id){const m=msgCache[id];replyTo=id;$('rb').innerHTML=`<span class="truncate">Replying to <b>${esc(dn(profiles[m.sender_id]))}</b>: ${esc(plainText(m.content).slice(0,60))}</span><span onclick="replyTo=null;$('rb').classList.add('hidden')" class="cursor-pointer ml-3">✕</span>`;$('rb').classList.remove('hidden');$('i').focus()}
 function mentionUser(uid){const el=$('i');el.value+=(el.value&&!el.value.endsWith(' ')?' ':'')+'@'+profiles[uid].username+' ';el.focus()}
 
@@ -1011,7 +974,7 @@ function showProfile(uid){
   </div>`;
   {const g=p.card_grad||{};$('vpc').style.background=HEX.test(g.a||'')&&HEX.test(g.b||'')?`linear-gradient(180deg,${g.a},${g.b})`:''}
   $('vp').classList.remove('hidden');
-  Promise.all([sb.rpc('bc_badges',{uid:uid}),sb.from('supporters').select('user_id').eq('user_id',uid).maybeSingle()]).then(([{data},{data:sp}])=>{const el=$('vpbadges');if(el&&data)el.innerHTML=badgeList({...data,supporter:!!sp}).map(x=>`<span title="${esc(x[1])}" class="text-[11px] font-bold px-2 py-0.5 rounded-full" style="background:rgba(255,255,255,.1);color:#f2f3f5">${x[0]}</span>`).join('')});
+  loadBadgeDefs().then(()=>Promise.all([sb.rpc('bc_badges',{uid:uid}),sb.from('supporters').select('user_id').eq('user_id',uid).maybeSingle(),sb.from('user_badges').select('badge_id').eq('user_id',uid)])).then(([{data},{data:sp},{data:ub}])=>{const el=$('vpbadges');if(el&&data)el.innerHTML=badgeList({...data,supporter:!!sp,manual:(ub||[]).map(x=>x.badge_id)}).map(x=>`<span title="${esc(x[1])}" class="text-[11px] font-bold px-2 py-0.5 rounded-full" style="background:rgba(255,255,255,.1);color:#f2f3f5">${x[0]}</span>`).join('')});
   sb.rpc('bc_profile_stats',{uid}).then(({data})=>{const x=Array.isArray(data)?data[0]:data,el=$('vpstats');
     if(x&&el)el.innerHTML='<div>#️⃣ account #'+x.account_no+'</div><div>💬 '+Number(x.msgs).toLocaleString()+' messages</div>'})}
 async function blockUser(uid){if(!(await askConfirm('Block '+dn(profiles[uid])+'? You will stop seeing their messages. Undo with /unblock username')))return;const {error}=await sb.from('blocks').insert({blocked:uid});if(error)return alert(error.message);blocked.add(uid);if(cur.type==='ch')openChannel(cur.id);else if(cur.type==='dm')openDM(cur.id)}
@@ -1099,13 +1062,13 @@ async function sendImage(f){
     const b=await shrink(f);if(b.size>5*1024*1024)return alert('Image too large (max 5 MB).');
     const ext=b.type==='image/gif'?'gif':b.type==='image/png'?'png':b.type==='image/webp'?'webp':'jpg';
     const path=me.id+'/'+crypto.randomUUID()+'.'+ext;
-    const up=await sb.storage.from('chat-images').upload(path,b,{contentType:b.type});
+    const up=await sb.storage.from('chat-images').upload(path,b,{contentType:b.type,cacheControl:'31536000'});
     if(up.error)return alert('Upload failed: '+up.error.message);
     base={image_url:sb.storage.from('chat-images').getPublicUrl(path).data.publicUrl};
   }else{
     if(f.size>10*1024*1024)return alert('File too large (max 10 MB).');
     const path=me.id+'/'+crypto.randomUUID()+'_'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
-    const up=await sb.storage.from('chat-files').upload(path,f,{contentType:f.type||'application/octet-stream'});
+    const up=await sb.storage.from('chat-files').upload(path,f,{contentType:f.type||'application/octet-stream',cacheControl:'31536000'});
     if(up.error)return alert('Upload failed: '+up.error.message);
     base={file_url:sb.storage.from('chat-files').getPublicUrl(path).data.publicUrl,file_name:f.name};
   }
@@ -1858,7 +1821,7 @@ async function togglePins(){
   if(error)return alert(error.message);
   const canMod=myPerm('manage_messages');
   const item=m=>{const p=profiles[m.sender_id]||{username:'?'};
-    return `<div class="rounded-xl bg-black/20 p-3 text-sm"><div class="flex items-center gap-2"><b style="${nameCss(p)}">${esc(dn(p))}</b><span class="text-[10px] text-[#949ba4]">${new Date(m.created_at).toLocaleString()}</span></div><p class="mt-1 break-words whitespace-pre-wrap">${esc(plainText(m.content))}</p>${canMod?`<div class="mt-2 flex gap-2"><button onclick="pinAction('${m.id}','unpin')" class="pbtn">Unpin</button>${canDeleteMsg(m)?'<button onclick="pinAction(\''+m.id+'\',\'delete\')" class="pbtn danger">Delete message</button>':''}</div>`:''}</div>`};
+    return `<div class="rounded-xl bg-black/20 p-3 text-sm"><div class="flex items-center gap-2"><b style="${nameCss(p)}">${esc(dn(p))}</b><span class="text-[10px] text-[#949ba4]">${new Date(m.created_at).toLocaleString()}</span></div><p class="mt-1 break-words whitespace-pre-wrap">${esc(plainText(m.content))}</p>${canMod?`<div class="mt-2 flex gap-2"><button onclick="pinAction('${m.id}','unpin')" class="pbtn">Unpin</button><button onclick="pinAction('${m.id}','delete')" class="pbtn danger">Delete message</button></div>`:''}</div>`};
   $('vpc').innerHTML=`<div class="flex items-center justify-between mb-3"><h3 class="font-bold text-white">📌 Pinned messages</h3><button onclick="closeVp()" class="text-[#949ba4] hover:text-white">✕</button></div><div class="text-left space-y-3 max-h-[60vh] overflow-y-auto">${data.length?data.map(item).join(''):'<p class="text-xs text-[#949ba4]">No pinned messages yet.</p>'}</div>`;
   $('vp').classList.remove('hidden');
 }
@@ -2076,7 +2039,7 @@ async function sendGift(){
 
 // ===== BeanBot =====
 const BOT_FN='beanbot'; // name of the Supabase edge function that runs BeanBot
-const STAFF_CMDS=new Set(['help','quote','bold','newrole','delrole','banword','unbanword','banwords','delserver','auditlog','iplog','reports','reload','ban','unban','mute','unmute','nick','giverole','deleteuser','banip','hwidban','unhwidban','unbanip','devalts','ips','alts','gift','switch','unblock','kick','role','bans']);
+const STAFF_CMDS=new Set(['help','bold','newrole','delrole','banword','unbanword','banwords','delserver','auditlog','iplog','reports','reload','ban','unban','mute','unmute','nick','giverole','deleteuser','banip','hwidban','unhwidban','unbanip','devalts','ips','alts','gift','switch','unblock','kick','role','bans']);
 async function botCall(cmd,line){
   if(!cmd)return sys('Type /help to see the commands.');
   if(cur.type!=='ch')return sys('BeanBot commands only work in server channels.');
@@ -2549,11 +2512,25 @@ $('u').addEventListener('keydown',e=>{if(e.key==='Enter'&&!$('p').value){e.preve
 
 
 // ===== milestone badges + leaderboards =====
+let badgeDefs={};
+async function loadBadgeDefs(force){if(!force&&Object.keys(badgeDefs).length)return;try{const {data}=await sb.from('badge_defs').select('*').order('name');badgeDefs={};(data||[]).forEach(x=>badgeDefs[x.id]=x)}catch(e){}}
 function badgeList(d){
-  const out=d.supporter?[['💖 Supporter','Supports BEANCORD on Ko-fi']]:[];const days=d.created_at?(Date.now()-new Date(d.created_at))/864e5:0,st=d.best_streak||0,rk=d.beans_rank||0;
-  [[730,'👑 2 years','Here for 2 years'],[365,'🎂 1 year','Here for a year'],[180,'🌿 6 months','Here for 6 months'],[30,'🌱 1 month','Here for a month']].some(([n,l,t])=>days>=n&&out.push([l,t]));
-  [[365,'🏆 365-day streak','Claimed daily beans 365 days in a row'],[100,'💯 100-day streak','Claimed daily beans 100 days in a row'],[30,'🔥 30-day streak','Claimed daily beans 30 days in a row'],[7,'✨ 7-day streak','Claimed daily beans 7 days in a row']].some(([n,l,t])=>st>=n&&out.push([l,t]));
+  const out=(d.manual||[]).map(id=>badgeDefs[id]).filter(Boolean).map(x=>[x.emoji+' '+x.name,x.descr||x.name]);
+  if(d.supporter)out.unshift(['💖 Supporter','Supports BEANCORD on Ko-fi']);
+  const days=d.created_at?(Date.now()-new Date(d.created_at))/864e5:0,st=d.best_streak||0,rk=d.beans_rank||0,top=(list,v)=>list.find(x=>v>=x[0]);
+  const age=top([[730,'👑 2 years','Here for 2 years'],[365,'🎂 1 year','Here for a year'],[180,'🌿 6 months','Here for 6 months'],[30,'🌱 1 month','Here for a month']],days);if(age)out.push([age[1],age[2]]);
+  const sk=top([[365,'🏆 365-day streak','Claimed daily beans 365 days in a row'],[100,'💯 100-day streak','Claimed daily beans 100 days in a row'],[30,'🔥 30-day streak','Claimed daily beans 30 days in a row'],[7,'✨ 7-day streak','Claimed daily beans 7 days in a row']],st);if(sk)out.push([sk[1],sk[2]]);
   if(rk>=1&&rk<=3)out.push([['🥇','🥈','🥉'][rk-1]+' Top '+rk+' richest','Ranked #'+rk+' in beans']);else if(rk>=1&&rk<=10)out.push(['💰 Top 10 richest','Ranked #'+rk+' in beans']);
+  const ms=top([[10000,'📣 10,000 messages','Sent 10,000 messages'],[1000,'🗨️ 1,000 messages','Sent 1,000 messages'],[100,'💬 100 messages','Sent 100 messages']],d.msgs||0);if(ms)out.push([ms[1],ms[2]]);
+  const rx=top([[1000,'💞 1,000 reactions','Got 1,000 reactions on their messages'],[100,'❤️ 100 reactions','Got 100 reactions on their messages']],d.rx||0);if(rx)out.push([rx[1],rx[2]]);
+  const cl=top([[365,'🫘 365 daily claims','Claimed daily beans 365 times'],[100,'🫘 100 daily claims','Claimed daily beans 100 times']],d.claims||0);if(cl)out.push([cl[1],cl[2]]);
+  if(d.early_rank>=1&&d.early_rank<=100)out.push(['🌅 Early member','One of the first 100 accounts (#'+d.early_rank+')']);
+  if(d.night)out.push(['🦉 Night owl','Sent a message between 3am and 5am']);
+  if(d.comeback)out.push(['🧊 Comeback','Came back after losing a long streak']);
+  const it=top([[10,'🛒 Big collector','Owns 10 or more shop items'],[5,'🛍️ Collector','Owns 5 or more shop items']],d.items||0);if(it)out.push([it[1],it[2]]);
+  if(d.halloween)out.push(['🎃 Halloween','Sent a message on Halloween']);
+  if(d.xmas)out.push(['🎄 Christmas','Sent a message on Christmas']);
+  if(d.bday)out.push(['🥳 BEANCORD birthday','Sent a message on the day BEANCORD started']);
   return out}
 async function openLeaderboard(tab){
   tab=tab||'beans';const {data,error}=await sb.rpc('bc_leaderboards');
@@ -2577,3 +2554,6 @@ function sqSync(){
 // supporter badge (set by the Ko-fi webhook): a 💖 next to the name in the member list
 let supIds=new Set();
 async function loadSupporters(){try{const {data}=await sb.from('supporters').select('user_id');supIds=new Set((data||[]).map(x=>x.user_id))}catch(e){}}
+
+// staff commands that are only viewing or help are not sent to the owner as alerts
+const AUDIT_SKIP=new Set(['help','bans','reports','auditlog','banwords','warnings','endpoll']);
