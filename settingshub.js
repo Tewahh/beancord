@@ -228,13 +228,12 @@ async function shCmdSet(name,perm){
 // ---------- Bots & Lists: bot accounts and the accounts /alts leaves out ----------
 async function shLists(b){
   b.innerHTML='<div class="sx-sub">Loading…</div>';
-  const [bots,hid]=await Promise.all([sb.from('bc_bots').select('username').order('username'),sb.from('bc_alt_hidden').select('username').order('username')]);
-  if(bots.error&&hid.error){b.innerHTML=shEmpty('These lists are not set up yet.<br>Run <b>setup/fluid_ranks.sql</b> in Supabase first.');return}
-  const sect=(title,note,key,rows,ph)=>`<div class="sx-sec">${title}</div><div class="sx-sub" style="margin-bottom:8px">${note}</div>
-    <div class="sx-bar" style="margin-bottom:8px"><input id="ls_${key}" class="sx-in" style="margin:0;flex:1;min-width:180px" placeholder="${ph}" autocomplete="off" onkeydown="if(event.key==='Enter')shListAdd('${key}')">${shBtn('Add',`shListAdd('${key}')`,'blue')}</div>`+
-    (rows.length?rows.map(r=>`<div class="sx-row"><div class="sx-grow"><div class="sx-nm">@${esc(r.username)}</div></div>${shBtn('Remove',`shListDel('${key}','${esc(r.username)}')`,'red')}</div>`).join(''):`<div class="sx-sub" style="padding:6px 0">Nobody listed.</div>`);
-  b.innerHTML=sect('Bot accounts','Accounts listed here are drawn as bots: they get the BOT badge, their messages cannot be edited and they never get link previews.','bots',bots.data||[],'username of the bot account')+
-    sect('Hidden from /alts','These usernames never show up when someone runs /alts. Use it for your own extra accounts.','hid',hid.data||[],'username to hide');
+  const bots=await sb.from('bc_bots').select('username').order('username');
+  if(bots.error){b.innerHTML=shEmpty('These lists are not set up yet.<br>Run <b>setup/fluid_ranks.sql</b> in Supabase first.');return}
+  const rows=bots.data||[];
+  b.innerHTML=`<div class="sx-sec">Bot accounts</div><div class="sx-sub" style="margin-bottom:8px">Accounts listed here are drawn as bots: they get the BOT badge, their messages cannot be edited and they never get link previews.</div>
+    <div class="sx-bar" style="margin-bottom:8px"><input id="ls_bots" class="sx-in" style="margin:0;flex:1;min-width:180px" placeholder="username of the bot account" autocomplete="off" onkeydown="if(event.key==='Enter')shListAdd('bots')">${shBtn('Add',"shListAdd('bots')",'blue')}</div>`+
+    (rows.length?rows.map(r=>`<div class="sx-row"><div class="sx-grow"><div class="sx-nm">@${esc(r.username)}</div></div>${shBtn('Remove',`shListDel('bots','${esc(r.username)}')`,'red')}</div>`).join(''):`<div class="sx-sub" style="padding:6px 0">Nobody listed.</div>`);
 }
 async function shListAdd(key){
   const el=$('ls_'+key),u=(el.value||'').trim().toLowerCase().replace(/^@/,'');if(!u)return;
