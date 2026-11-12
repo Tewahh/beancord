@@ -17,7 +17,7 @@ function shPages(){
     {g:'Channels',items:[{k:'channels',ic:'#',t:'Channels',ok:staff||myPerm('manage_channels')}]},
     {g:'Moderation',items:[{k:'rules',ic:'📜',t:'Welcome & Rules',ok:staff},{k:'automod',ic:'🤖',t:'Auto-mod',ok:staff&&def},{k:'words',ic:'🚫',t:'Blocked Words',ok:staff&&def}]},
     {g:'Integrations',items:[{k:'hooks',ic:'🔗',t:'Webhooks',ok:staff}]},
-    {g:'Bot & site',items:[{k:'commands',ic:'⌨',t:'Commands',ok:def&&shCanLists()},{k:'lists',ic:'📃',t:'Bots & Lists',ok:def&&shCanLists()},{k:'feedback',ic:'💡',t:'Feedback',ok:def&&shCanFeedback()}]},
+    {g:'Bot & site',items:[{k:'commands',ic:'⌨',t:'Commands',ok:def&&shCanLists()},{k:'cmdroles',ic:'🔐',t:'Command access',ok:def&&shCanLists()},{k:'lists',ic:'📃',t:'Bots & Lists',ok:def&&shCanLists()},{k:'feedback',ic:'💡',t:'Feedback',ok:def&&shCanFeedback()}]},
   ].map(s=>({...s,items:s.items.filter(i=>i.ok)})).filter(s=>s.items.length);
 }
 
@@ -42,7 +42,7 @@ function shDraw(){
   const cur=all.find(i=>i.k===shPage);
   $('sx_t').textContent=cur.t;
   const b=$('sx_b');b.className='';b.onclick=null;delete b.dataset.editing;
-  ({overview:shOverview,roles:shRoles,tags:shTags,audit:shAudit,channels:shChannels,rules:tvRules,automod:tvAutomod,words:tvWords,hooks:tvHooks,commands:shCommands,lists:shLists,feedback:shFeedback,decor:shDecor,inbox:shInbox,badges:shBadges})[shPage](b);
+  ({overview:shOverview,roles:shRoles,tags:shTags,audit:shAudit,channels:shChannels,rules:tvRules,automod:tvAutomod,words:tvWords,hooks:tvHooks,commands:shCommands,cmdroles:shCmdRoles,lists:shLists,feedback:shFeedback,decor:shDecor,inbox:shInbox,badges:shBadges})[shPage](b);
   const m=$('sx').querySelector('.sx-main');if(m)m.scrollTop=0;
 }
 
