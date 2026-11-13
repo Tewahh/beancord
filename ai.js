@@ -64,6 +64,7 @@
     const wait=COOLDOWN_MS-(Date.now()-lastSent);
     if(wait>0)return add('err','Slow down a little: try again in '+Math.ceil(wait/1000)+'s.');
     if(typeof sb==='undefined')return add('err','Not ready yet. Try again in a moment.');
+    if(typeof hasSlur==='function'&&hasSlur(text))return add('err','That was blocked by auto-mod: hateful language is not allowed.');
     busy=true;lastSent=Date.now();$$('ai_send').disabled=true;inp.value='';
     add('me',text);hist.push({role:'user',content:text});
     const thinking=add('bot','Thinking\u2026');
