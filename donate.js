@@ -1,6 +1,6 @@
 // Donation page + an always-visible side tab. Edit this block only.
 const DONATE={
-  url:'',                 // <- paste your donation link here (Ko-fi, PayPal.me, Cash App, Stripe...). Empty = button shows "coming soon".
+  url:'https://ko-fi.com/beancord',               // <- paste your donation link here (Ko-fi, PayPal.me, Cash App, Stripe...). Empty = button shows "coming soon".
   title:'Support BEANCORD',
   blurb:'BEANCORD is built and paid for by one person. Every donation goes straight into hosting, so the site stays fast and ad-free.',
   goalName:'Monthly hosting', goalMax:25,   // dollars; set goalMax to 0 to hide the bar
