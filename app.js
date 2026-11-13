@@ -597,7 +597,8 @@ async function addByName(){const n=$('fadd').value.trim().toLowerCase().replace(
   if(error)return say(error.message);await loadFriends();drawPeople();$('fmsg').textContent='Request sent to '+u.username}
 async function runCmd(line){
   const [c,name,arg]=line.slice(1).trim().split(/\s+/);const cmd=(c||'').toLowerCase();
-  if(cmd==='help')return sys('BeanBot: /balance · /coinflip 100 heads · /slots 100 · /roulette 100 red · /dice 100 4 · /blackjack 100 (then /hit, /stand or /double) · /luck (beans are play money) · /welcome · /goodbye (admins: join and leave messages) · /poll question | option 1 | option 2 · /polls · /endpoll number · /usercount · /serverinfo · /userinfo user · /topbeans · /roll 2d6 · /flip · /8ball question · /choose a | b | c · /rate thing · /hug user · /quote user [words] · /beanfact · /ping · /cmds · admins: /addcmd name text · /delcmd name · /botset disable|enable command · mods: /warn user reason · /warnings user · /purge 20 · /mutes · admins: /clearwarns user · /slowmode 10 · /announce text · anyone: /seen user · /stats · owner: /automod (automatic mutes for banned words, spam and warnings). Other commands: /bold text (admins and up: big bold message) · /ban user hours · /unban user · /mute user minutes · /unmute user · /kick user · /nick user newname · /newrole name #color member|verified|mod|admin · /giverole user rolename|none · /delrole name · /deleteuser user · /gift user amount · /switch user · /banword word · /unbanword word · /banwords · /auditlog. Built-in roles are managed only from the gear icon. Deleting a server is only in its right-click menu. /hwidban user bans the devices they have used (works through VPNs) · /unhwidban user · /banip user bans the network address on their account, and is not foolproof since addresses change · /ips user · /alts user · /iplog');
+  if(cmd==='purge')return sys('/purge is turned off.');
+  if(cmd==='help')return sys('BeanBot: /balance · /coinflip 100 heads · /slots 100 · /roulette 100 red · /dice 100 4 · /blackjack 100 (then /hit, /stand or /double) · /luck (beans are play money) · /welcome · /goodbye (admins: join and leave messages) · /poll question | option 1 | option 2 · /polls · /endpoll number · /usercount · /serverinfo · /userinfo user · /topbeans · /roll 2d6 · /flip · /8ball question · /choose a | b | c · /rate thing · /hug user · /quote user [words] · /beanfact · /ping · /cmds · admins: /addcmd name text · /delcmd name · /botset disable|enable command · mods: /warn user reason · /warnings user · /mutes · admins: /clearwarns user · /slowmode 10 · /announce text · anyone: /seen user · /stats · owner: /automod (automatic mutes for banned words, spam and warnings). Other commands: /bold text (admins and up: big bold message) · /ban user hours · /unban user · /mute user minutes · /unmute user · /kick user · /nick user newname · /newrole name #color member|verified|mod|admin · /giverole user rolename|none · /delrole name · /deleteuser user · /gift user amount · /switch user · /banword word · /unbanword word · /banwords · /auditlog. Built-in roles are managed only from the gear icon. Deleting a server is only in its right-click menu. /hwidban user bans the devices they have used (works through VPNs) · /unhwidban user · /banip user bans the network address on their account, and is not foolproof since addresses change · /ips user · /alts user · /iplog');
   {const need=cmdNeed(cmd);if((need||roleListed(cmd))&&cmd!=='warnings'&&cmd!=='endpoll'&&!canUseCmd(cmd,need))return sys(roleListed(cmd)&&need!=='owner'?'Your role cannot use /'+cmd+'.':need==='owner'?'Only the owner can use /'+cmd+'.':'You need the '+permLabel(need)+' permission to use /'+cmd+'.')}
   {const nd=cmdNeed(cmd)||(roleListed(cmd)?'x':'');if(nd&&!AUDIT_SKIP.has(cmd))sb.rpc('bc_log_cmd',{cmd,args:line.slice(1).trim().replace(/^\S+\s*/,'').slice(0,300)}).then(()=>{},()=>{})}
   if(!STAFF_CMDS.has(cmd))return botCall(cmd,line);
@@ -709,7 +710,6 @@ let CMD_INFO=[
 ["unblock","user","Unblock someone you blocked","",false],
 ["warnings","[user]","See warnings (anyone can see their own)","timeout_members",false],
 ["warn","user reason","Warn someone","timeout_members",false],
-["purge","20 [user]","Delete recent messages","manage_messages",false],
 ["mutes","","Who is muted or banned right now","timeout_members",false],
 ["bans","","Who is banned right now (only you see it)","ban_members",false],
 ["mute","user minutes","Mute someone","timeout_members",false],
@@ -761,7 +761,7 @@ const roleKey=r=>String(r.name||'').toLowerCase().replace(/[^a-z0-9_]/g,'');
 // bot accounts and the command table live in the database (Server Settings > Bots & Lists / Commands)
 async function loadSiteLists(){
   try{const {data}=await sb.from('bc_bots').select('username');if(data&&data.length)BOT_NAMES=data.map(x=>String(x.username).toLowerCase())}catch(e){}
-  try{const {data}=await sb.from('bc_commands').select('*').order('ord');if(data&&data.length){const nb=CMD_INFO.find(x=>x[0]==='bans');const nq=CMD_INFO.find(x=>x[0]==='quote');CMD_INFO=data.map(r=>[r.name,r.usage||'',r.info||'',r.perm||'',!!r.hidden]);if(nb&&!CMD_INFO.some(x=>x[0]==='bans'))CMD_INFO.push(nb);if(nq&&!CMD_INFO.some(x=>x[0]==='quote'))CMD_INFO.push(nq)}}catch(e){}
+  try{const {data}=await sb.from('bc_commands').select('*').order('ord');if(data&&data.length){const nb=CMD_INFO.find(x=>x[0]==='bans');const nq=CMD_INFO.find(x=>x[0]==='quote');CMD_INFO=data.filter(r=>r.name!=='purge').map(r=>[r.name,r.usage||'',r.info||'',r.perm||'',!!r.hidden]);if(nb&&!CMD_INFO.some(x=>x[0]==='bans'))CMD_INFO.push(nb);if(nq&&!CMD_INFO.some(x=>x[0]==='quote'))CMD_INFO.push(nq)}}catch(e){}
 }
 const BOLDMARK='[[big]]';
 function plainText(c){
@@ -2075,7 +2075,7 @@ async function sendGift(){
 
 // ===== BeanBot =====
 const BOT_FN='beanbot'; // name of the Supabase edge function that runs BeanBot
-const STAFF_CMDS=new Set(['help','quote','bold','newrole','delrole','banword','unbanword','banwords','delserver','auditlog','iplog','reports','reload','ban','unban','mute','unmute','nick','giverole','deleteuser','banip','hwidban','unhwidban','unbanip','devalts','ips','alts','gift','switch','unblock','kick','role','bans']);
+const STAFF_CMDS=new Set(['help','purge','quote','bold','newrole','delrole','banword','unbanword','banwords','delserver','auditlog','iplog','reports','reload','ban','unban','mute','unmute','nick','giverole','deleteuser','banip','hwidban','unhwidban','unbanip','devalts','ips','alts','gift','switch','unblock','kick','role','bans']);
 async function botCall(cmd,line){
   if(!cmd)return sys('Type /help to see the commands.');
   if(cur.type!=='ch')return sys('BeanBot commands only work in server channels.');
