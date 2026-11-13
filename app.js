@@ -597,7 +597,7 @@ async function addByName(){const n=$('fadd').value.trim().toLowerCase().replace(
   if(error)return say(error.message);await loadFriends();drawPeople();$('fmsg').textContent='Request sent to '+u.username}
 async function runCmd(line){
   const [c,name,arg]=line.slice(1).trim().split(/\s+/);const cmd=(c||'').toLowerCase();
-  if(cmd==='help')return sys('BeanBot: /balance · /coinflip 100 heads · /slots 100 · /roulette 100 red · /dice 100 4 · /blackjack 100 (then /hit, /stand or /double) · /luck (beans are play money) · /welcome · /goodbye (admins: join and leave messages) · /poll question | option 1 | option 2 · /polls · /endpoll number · /usercount · /serverinfo · /userinfo user · /topbeans · /roll 2d6 · /flip · /8ball question · /choose a | b | c · /rate thing · /hug user · /beanfact · /ping · /cmds · admins: /addcmd name text · /delcmd name · /botset disable|enable command · mods: /warn user reason · /warnings user · /purge 20 · /mutes · admins: /clearwarns user · /slowmode 10 · /announce text · anyone: /seen user · /stats · owner: /automod (automatic mutes for banned words, spam and warnings). Other commands: /bold text (admins and up: big bold message) · /ban user hours · /unban user · /mute user minutes · /unmute user · /kick user · /nick user newname · /newrole name #color member|verified|mod|admin · /giverole user rolename|none · /delrole name · /deleteuser user · /gift user amount · /switch user · /banword word · /unbanword word · /banwords · /auditlog. Built-in roles are managed only from the gear icon. Deleting a server is only in its right-click menu. /hwidban user bans the devices they have used (works through VPNs) · /unhwidban user · /banip user bans the network address on their account, and is not foolproof since addresses change · /ips user · /alts user · /iplog');
+  if(cmd==='help')return sys('BeanBot: /balance · /coinflip 100 heads · /slots 100 · /roulette 100 red · /dice 100 4 · /blackjack 100 (then /hit, /stand or /double) · /luck (beans are play money) · /welcome · /goodbye (admins: join and leave messages) · /poll question | option 1 | option 2 · /polls · /endpoll number · /usercount · /serverinfo · /userinfo user · /topbeans · /roll 2d6 · /flip · /8ball question · /choose a | b | c · /rate thing · /hug user · /quote user [words] · /beanfact · /ping · /cmds · admins: /addcmd name text · /delcmd name · /botset disable|enable command · mods: /warn user reason · /warnings user · /purge 20 · /mutes · admins: /clearwarns user · /slowmode 10 · /announce text · anyone: /seen user · /stats · owner: /automod (automatic mutes for banned words, spam and warnings). Other commands: /bold text (admins and up: big bold message) · /ban user hours · /unban user · /mute user minutes · /unmute user · /kick user · /nick user newname · /newrole name #color member|verified|mod|admin · /giverole user rolename|none · /delrole name · /deleteuser user · /gift user amount · /switch user · /banword word · /unbanword word · /banwords · /auditlog. Built-in roles are managed only from the gear icon. Deleting a server is only in its right-click menu. /hwidban user bans the devices they have used (works through VPNs) · /unhwidban user · /banip user bans the network address on their account, and is not foolproof since addresses change · /ips user · /alts user · /iplog');
   {const need=cmdNeed(cmd);if((need||roleListed(cmd))&&cmd!=='warnings'&&cmd!=='endpoll'&&!canUseCmd(cmd,need))return sys(roleListed(cmd)&&need!=='owner'?'Your role cannot use /'+cmd+'.':need==='owner'?'Only the owner can use /'+cmd+'.':'You need the '+permLabel(need)+' permission to use /'+cmd+'.')}
   {const nd=cmdNeed(cmd)||(roleListed(cmd)?'x':'');if(nd&&!AUDIT_SKIP.has(cmd))sb.rpc('bc_log_cmd',{cmd,args:line.slice(1).trim().replace(/^\S+\s*/,'').slice(0,300)}).then(()=>{},()=>{})}
   if(!STAFF_CMDS.has(cmd))return botCall(cmd,line);
@@ -631,6 +631,13 @@ async function runCmd(line){
     if(du){u=du;profiles[du.id]=du}
   }
   if(!u)return sys('No user named "'+(name||'')+'". Usage: /'+cmd+' username');
+  if(cmd==='quote'){
+    const words=P.slice(2).join(' ').toLowerCase();
+    const here=m=>cur.type==='ch'?m.channel_id===cur.id:cur.type==='group'?m.group_id===cur.id:(!m.channel_id&&!m.group_id&&((m.sender_id===cur.id&&m.recipient_id===me.id)||(m.sender_id===me.id&&m.recipient_id===cur.id)));
+    const found=Object.values(msgCache).filter(m=>m.sender_id===u.id&&here(m)&&m.content&&!/^(\/|\[\[)/.test(m.content)&&(!words||String(m.content).toLowerCase().includes(words))).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))[0];
+    if(!found)return sys('No recent message from '+u.username+(words?' containing "'+words+'"':'')+' here. Usage: /quote username [words to search for]');
+    return postQuote(found);
+  }
   if(['ban','unban','mute','unmute'].includes(cmd)){
     const kind=cmd.replace('un',''),undo=cmd.startsWith('un');let mins=0;
     if(!undo){const n=parseFloat(arg);if(!(n>0))return sys('Usage: /'+cmd+' username '+(kind==='ban'?'hours':'minutes'));mins=Math.round(n*(kind==='ban'?60:1))}
@@ -687,6 +694,7 @@ let CMD_INFO=[
 ["choose","a | b | c","Let BeanBot pick one","",false],
 ["rate","thing","BeanBot rates it out of 10","",false],
 ["hug","@user","Give someone a hug","",false],
+["quote","@user words","Quote what someone said (their latest message, or the latest one containing the words)","",false],
 ["beanfact","","A random bean fact","",false],
 ["ping","","Check that BeanBot is awake","",false],
 ["usercount","","How many members and accounts","",false],
@@ -753,7 +761,7 @@ const roleKey=r=>String(r.name||'').toLowerCase().replace(/[^a-z0-9_]/g,'');
 // bot accounts and the command table live in the database (Server Settings > Bots & Lists / Commands)
 async function loadSiteLists(){
   try{const {data}=await sb.from('bc_bots').select('username');if(data&&data.length)BOT_NAMES=data.map(x=>String(x.username).toLowerCase())}catch(e){}
-  try{const {data}=await sb.from('bc_commands').select('*').order('ord');if(data&&data.length){const nb=CMD_INFO.find(x=>x[0]==='bans');CMD_INFO=data.map(r=>[r.name,r.usage||'',r.info||'',r.perm||'',!!r.hidden]);if(nb&&!CMD_INFO.some(x=>x[0]==='bans'))CMD_INFO.push(nb)}}catch(e){}
+  try{const {data}=await sb.from('bc_commands').select('*').order('ord');if(data&&data.length){const nb=CMD_INFO.find(x=>x[0]==='bans');const nq=CMD_INFO.find(x=>x[0]==='quote');CMD_INFO=data.map(r=>[r.name,r.usage||'',r.info||'',r.perm||'',!!r.hidden]);if(nb&&!CMD_INFO.some(x=>x[0]==='bans'))CMD_INFO.push(nb);if(nq&&!CMD_INFO.some(x=>x[0]==='quote'))CMD_INFO.push(nq)}}catch(e){}
 }
 const BOLDMARK='[[big]]';
 function plainText(c){
@@ -761,6 +769,7 @@ function plainText(c){
   if(c.startsWith('[[embed]]')){try{const o=JSON.parse(c.slice(9));return [o.t,o.d].filter(Boolean).join(' ')}catch(e){return 'BeanBot'}}
   if(c.startsWith('[[poll:')){const l=c.split('\n');return '📊 '+(l[1]||'Poll')}
   if(c.startsWith(BOLDMARK))return c.slice(BOLDMARK.length).trim();
+  if(c.startsWith(QUOTEMARK)){try{const o=JSON.parse(c.slice(QUOTEMARK.length).split('\n')[0]);return '\u201c'+o.t+'\u201d \u2014 '+o.n}catch(e){}}
   return c;
 }
 // accounts that get BeanBot's look: BOT badge, embed cards, no edit button. Add your own bot accounts' usernames here.
@@ -784,6 +793,7 @@ function autoEmbed(c){
 }
 function fmt(m){
   const c=String(m.content||'');let h;{const g=gifHtml(c);if(g&&!isBot(profiles[m.sender_id]))return g}
+  if(c.startsWith(QUOTEMARK)&&!isBot(profiles[m.sender_id])){const q=quoteHtml(c);if(q)return q}
   if(c.startsWith('[[poll:')&&isBot(profiles[m.sender_id])){const ph=pollCardHtml(c);if(ph)return ph}
   if(isBot(profiles[m.sender_id])){
     if(c.startsWith('[[embed]]')){try{return embedBox(JSON.parse(c.slice(9)))}catch(e){}}
@@ -890,8 +900,9 @@ const mi=(ic,t,fn,red,keep,arrow)=>`<div onclick="${keep?'event.stopPropagation(
 const emo=(id,e)=>`<span onclick="toggleRx('${id}','${e}')" class="w-9 h-9 flex items-center justify-center text-xl rounded-full hover:bg-[#35373c] cursor-pointer">${e}</span>`;
 function msgMenu(id,x,y){const m=msgCache[id];if(!m)return;const ch=!!m.channel_id,self=m.sender_id===me.id,mod=ch&&myPerm('manage_messages');let h='';
   h+=`<div class="flex gap-2 px-1 pt-1 pb-2">${QUICK.map(e=>emo(id,e)).join('')}</div>`+mi('☺','Add reaction',`moreRx('${id}',${x},${y})`,0,1,1)+sep;
-  if(self&&!isBot(profiles[m.sender_id]))h+=mi('✎','Edit message',`editMsg('${id}')`);
+  if(self&&!isBot(profiles[m.sender_id])&&!String(m.content).startsWith(QUOTEMARK))h+=mi('✎','Edit message',`editMsg('${id}')`);
   h+=mi('↩','Reply',`startReply('${id}')`);
+  h+=mi('❝','Quote',`quoteMsg('${id}')`);
   h+=mi('➡','Forward',`forwardMsg('${id}')`);
   if(ch)h+=mi('🧵',replyCount[id]?'Open thread':'Start thread',`openThread('${id}')`);
   h+=sep+mi('⧉','Copy text',`navigator.clipboard.writeText(msgCache['${id}'].content)`);
@@ -907,6 +918,31 @@ function msgMenu(id,x,y){const m=msgCache[id];if(!m)return;const ch=!!m.channel_
 function moreRx(id,x,y){showCtx(x,y,`<div class="grid grid-cols-4 gap-1 p-1">${EMOJIS.map(e=>emo(id,e)).join('')}</div>`)}
 function chanMenu(id,x,y){let h='';if(isStaff()||myPerm('manage_channels'))h+=mi('⬆','Move up',`moveChannel('${id}',-1)`)+mi('⬇','Move down',`moveChannel('${id}',1)`)+sep+mi('✎','Edit channel',`editChannel('${id}')`)+mi('🗑','Delete channel',`deleteChannel('${id}')`,1)+sep;showCtx(x,y,h+chanExtraMenu(id)+mi('ID','Copy channel ID',`navigator.clipboard.writeText('${id}')`))}
 async function moveChannel(id,delta){const {error}=await sb.rpc('set_channel_position',{cid:id,delta});if(error)return alert(error.message);await openServer(srvId)}
+// ===== quote cards: /quote and the Quote menu item send one of these =====
+const QUOTEMARK='[[quote]]';
+function quoteCard(m){
+  const p=profiles[m.sender_id],ch=m.channel_id&&typeof channels!=='undefined'?channels.find(x=>x.id===m.channel_id):null;
+  const when=new Date(m.created_at).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+  // the zero-width space after each @ stops quoted text from pinging anyone (or sneaking in @everyone)
+  const t=plainText(m.content).trim().slice(0,500).replace(/@/g,'@\u200b');
+  return QUOTEMARK+JSON.stringify({t,u:m.sender_id,n:dn(p),x:(ch?'#'+ch.name+' \u00b7 ':'')+when});
+}
+function quoteHtml(c){
+  let o;try{o=JSON.parse(c.slice(QUOTEMARK.length).split('\n')[0])}catch(e){return null}
+  if(!o||typeof o.t!=='string')return null;
+  const p=profiles[o.u],name=p?dn(p):(o.n||'unknown');
+  return `<div style="max-width:30rem;margin-top:4px;background:#111214;border:1px solid #2e2f34;border-radius:14px;padding:14px 18px;white-space:normal"><div style="text-align:right;margin-bottom:-6px"><span style="font:11px ui-monospace,Menlo,monospace;color:#80848e;border:1px solid #2e2f34;border-radius:5px;padding:1px 6px">/quote</span></div><div style="display:flex;gap:8px;align-items:flex-start"><span style="font:700 2.4rem/1 Georgia,serif;color:#6d6f78;flex-shrink:0;margin-top:2px">\u201c</span><div style="font-size:1.15rem;line-height:1.4;color:#ece9e2;white-space:pre-wrap;word-break:break-word;min-width:0;padding-top:4px">${esc(o.t)}<span style="font:700 2.4rem/0 Georgia,serif;color:#6d6f78;vertical-align:-0.45em;margin-left:4px">\u201d</span></div></div><div style="border-top:1px solid #2b2d31;margin-top:12px;padding-top:12px;display:flex;gap:12px;align-items:center">${p?av(p,9):''}<div style="min-width:0"><div style="font-weight:700;font-size:15px;color:#fff">${esc(name)}</div><div style="font-size:12.5px;color:#949ba4">${esc(o.x||'')}</div></div></div></div>`;
+}
+async function postQuote(m){
+  if(!cur.type)return sys('Open a channel or chat first.');
+  if(cur.type==='ch'&&!canPostHere())return sys('You do not have permission to type in this channel.');
+  {const mu=until(me,'muted_until');if(mu)return alert('You are muted until '+mu.toLocaleString())}
+  const body=quoteCard(m);
+  const row=cur.type==='ch'?{channel_id:cur.id,content:body,reply_to:m.id}:cur.type==='group'?{group_id:cur.id,content:body,reply_to:m.id}:{recipient_id:cur.id,content:body,reply_to:m.id};
+  const {error}=await sb.from(cur.type==='ch'?'messages':cur.type==='group'?'group_dm_messages':'dm_messages').insert(row);
+  if(error)sys('Could not send: '+error.message);
+}
+function quoteMsg(id){const m=msgCache[id];if(m)postQuote(m)}
 function startReply(id){const m=msgCache[id];replyTo=id;$('rb').innerHTML=`<span class="truncate">Replying to <b>${esc(dn(profiles[m.sender_id]))}</b>: ${esc(plainText(m.content).slice(0,60))}</span><span onclick="replyTo=null;$('rb').classList.add('hidden')" class="cursor-pointer ml-3">✕</span>`;$('rb').classList.remove('hidden');$('i').focus()}
 function mentionUser(uid){const el=$('i');el.value+=(el.value&&!el.value.endsWith(' ')?' ':'')+'@'+profiles[uid].username+' ';el.focus()}
 
@@ -2039,7 +2075,7 @@ async function sendGift(){
 
 // ===== BeanBot =====
 const BOT_FN='beanbot'; // name of the Supabase edge function that runs BeanBot
-const STAFF_CMDS=new Set(['help','bold','newrole','delrole','banword','unbanword','banwords','delserver','auditlog','iplog','reports','reload','ban','unban','mute','unmute','nick','giverole','deleteuser','banip','hwidban','unhwidban','unbanip','devalts','ips','alts','gift','switch','unblock','kick','role','bans']);
+const STAFF_CMDS=new Set(['help','quote','bold','newrole','delrole','banword','unbanword','banwords','delserver','auditlog','iplog','reports','reload','ban','unban','mute','unmute','nick','giverole','deleteuser','banip','hwidban','unhwidban','unbanip','devalts','ips','alts','gift','switch','unblock','kick','role','bans']);
 async function botCall(cmd,line){
   if(!cmd)return sys('Type /help to see the commands.');
   if(cur.type!=='ch')return sys('BeanBot commands only work in server channels.');
