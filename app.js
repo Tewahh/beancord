@@ -526,7 +526,12 @@ function nameCss(p){p=p||{};const s=p.name_style&&typeof p.name_style==='object'
   return o}
 let shopDecor={},ownedDecor=new Set();
 async function loadShopDecor(){try{const [a,b]=await Promise.all([sb.from('shop_decor').select('*'),sb.from('user_decor').select('decor_id')]);shopDecor={};(a.data||[]).forEach(d=>shopDecor[d.id]=d);ownedDecor=new Set((b.data||[]).map(x=>x.decor_id))}catch(e){}}
-const decWrap=(p,html)=>{const d=p&&p.equipped_decor&&shopDecor[p.equipped_decor];return d?`<span class="dec dec-${esc(d.kind)}" style="--d1:${esc(d.c1)};--d2:${esc(d.c2)}">${html}</span>`:html};
+// Picture decorations: a decoration whose id is listed here is drawn from an image in /decor instead of the coloured ring.
+// s = how much bigger the picture is than the avatar. To add one: put a transparent PNG in /decor, add a line here, then create a decoration with the same id in Settings.
+const IMG_DECOR={comicstar:{src:'decor/comicstar.png',s:1.465},cherryxoxo:{src:'decor/cherryxoxo.png',s:1.14},pinkribbon:{src:'decor/pinkribbon.png',s:1.149}};
+const decWrap=(p,html)=>{const d=p&&p.equipped_decor&&shopDecor[p.equipped_decor];if(!d)return html;const im=IMG_DECOR[d.id];
+  if(im)return `<span class="dec dec-img" style="--ds:${im.s}">${html}<img class="dec-pic" src="${im.src}" alt="" draggable="false" loading="lazy"></span>`;
+  return `<span class="dec dec-${esc(d.kind)}" style="--d1:${esc(d.c1)};--d2:${esc(d.c2)}">${html}</span>`};
 function av(p,n){return decWrap(p,av0(p,n))}
 function av0(p,n){p=p||{username:'?'};const z=n===20?'w-20 h-20':n===16?'w-16 h-16':n===6?'w-6 h-6':n===9?'w-9 h-9':'w-8 h-8';
   if(okImg(p.avatar))return `<img src="${esc(p.avatar)}" loading="lazy" decoding="async" class="${z} rounded-full object-cover flex-shrink-0">`;
